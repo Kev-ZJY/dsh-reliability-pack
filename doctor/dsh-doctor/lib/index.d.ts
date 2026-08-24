@@ -1,7 +1,3 @@
-//#region src/hash.d.ts
-declare function sha256(value: Uint8Array | string): string;
-declare function sha256File(path: string): Promise<string>;
-//#endregion
 //#region src/types.d.ts
 type CommandResult = {
   exitCode?: number;
@@ -153,4 +149,23 @@ declare function runCheck(args: ProfileInspectInput, io?: DoctorIO): Promise<num
 declare function runTokenMeterReport(args: TokenMeterInspectInput, io?: DoctorIO): Promise<number>;
 declare function runProfileUpdate(args: ProfileUpdateArgs, io?: DoctorIO): Promise<number>;
 //#endregion
-export { BackupFile, BackupFileName, BackupManifest, type CheckItem, type CommandResult, type CommandRunner, DoctorCommand, DoctorIO, type DumpConfigCommand, type FingerprintDefinition, type FingerprintReport, type NegativeValue, ParsedDoctorArgs, type ProfileCheckResult, type ProfileInspectInput, type ProfilePackageCheck, ProfileUpdateArgs, type StatusRecord, type TokenMeterInspectInput, type TokenMeterReport, createBackup, defaultCommandRunner, inspectProfile, inspectTokenMeter, parseDoctorArgs, redactSecrets, runCheck, runProfileUpdate, runTokenMeterReport, sha256, sha256File };
+//#region src/hash.d.ts
+declare function sha256(value: Uint8Array | string): string;
+declare function sha256File(path: string): Promise<string>;
+//#endregion
+//#region src/index.d.ts
+type DoctorCliPaths = {
+  home: string;
+  profileRoot: string;
+  profileManifestPath: string;
+  lockfilePath: string;
+  workspacePolicyPath: string;
+  cordisPatchPath: string;
+  tokenMeterPackagePath: string;
+  cachePaths: readonly string[];
+  sessionRecordPaths: readonly string[];
+};
+declare function resolveDoctorPaths(profile: string, environment?: NodeJS.ProcessEnv): DoctorCliPaths;
+declare function runDoctorCli(argv?: readonly string[], environment?: NodeJS.ProcessEnv, io?: DoctorIO): Promise<number>;
+//#endregion
+export { BackupFile, BackupFileName, BackupManifest, type CheckItem, type CommandResult, type CommandRunner, DoctorCliPaths, DoctorCommand, DoctorIO, type DumpConfigCommand, type FingerprintDefinition, type FingerprintReport, type NegativeValue, ParsedDoctorArgs, type ProfileCheckResult, type ProfileInspectInput, type ProfilePackageCheck, ProfileUpdateArgs, type StatusRecord, type TokenMeterInspectInput, type TokenMeterReport, createBackup, defaultCommandRunner, inspectProfile, inspectTokenMeter, parseDoctorArgs, redactSecrets, resolveDoctorPaths, runCheck, runDoctorCli, runProfileUpdate, runTokenMeterReport, sha256, sha256File };

@@ -1,5 +1,10 @@
-# Task 1 mounts the package scaffold only. The verified tools/post-execute
-# listener is added in Task 2; keep the bundle opt-in until that seam is wired.
+# The bundle inserts an optional host loader row. The loader invokes the
+# package's default export (`apply`) with this row's config; `apply` observes
+# the verified `tools/post-execute` seam and disposes its listener with the
+# profile lifecycle.
+#
+# Keep the row disabled until the profile explicitly opts into read-only path
+# diagnostics. The starter limits below are finite and fail closed.
 
 - insert:
     - id: path-diagnostics

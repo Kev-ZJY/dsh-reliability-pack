@@ -1,0 +1,24 @@
+{
+  "name": "dsh-doctor",
+  "version": "0.1.0",
+  "description": "Read-only profile and token-meter inspectors for DeepSeek Harness.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "bin": {
+    "dsh-doctor": "./lib/index.js"
+  },
+  "files": [
+    "lib"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^5.9.2"
+  },
+  "scripts": {
+    "test": "node --test --experimental-strip-types tests/**/*.test.ts",
+    "typecheck": "tsc --pretty false --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --strict --esModuleInterop --skipLibCheck --allowImportingTsExtensions --types node src/*.ts tests/*.test.ts",
+    "bundle": "tsdown src/index.ts --clean --dts --format esm --out-dir lib && node --input-type=module -e \"import { rename } from 'node:fs/promises'; await rename('lib/index.mjs', 'lib/index.js'); await rename('lib/index.d.mts', 'lib/index.d.ts')\""
+  }
+}

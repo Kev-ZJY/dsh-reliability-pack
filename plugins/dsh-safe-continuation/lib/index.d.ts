@@ -1,4 +1,4 @@
-import { SafeContinuationEnvelope } from "./runtime-types.mjs";
+import { SafeContinuationEnvelope } from "./runtime-types.js";
 //#region src/index.d.ts
 interface SafeContinuationConfig {
   enabled?: boolean;

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 const builtLoaderPath = new URL('../lib/index.js', import.meta.url);
@@ -42,6 +42,21 @@ test('dsh-safe-continuation package manifest forbids install-time build scripts'
 
   for (const scriptName of forbiddenScripts) {
     assert.equal(scriptName in (manifest.scripts ?? {}), false, `unexpected ${scriptName} script`);
+  }
+});
+
+test('published declarations reference only existing package-local files', async () => {
+  const declarationPath = new URL('../lib/index.d.ts', import.meta.url);
+  const declaration = await readFile(declarationPath, 'utf8');
+  const relativeTargets = [...declaration.matchAll(/(?:from\s+|import\(\s*)['"](\.[^'"]+)['"]/g)].map(
+    ([, target]) => target,
+  );
+
+  assert.doesNotMatch(declaration, /\.(?:mjs|mts)(?:['"]|\b)/);
+  assert.ok(relativeTargets.length > 0, 'expected at least one relative declaration import');
+
+  for (const target of relativeTargets) {
+    await access(new URL(target, declarationPath));
   }
 });
 

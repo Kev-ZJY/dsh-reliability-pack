@@ -2,9 +2,6 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": ".",
-    "typeRoots": [
-      "/Users/kevin_zjy/.dsh/plugins/dsh-operating-context/node_modules/@types"
-    ],
     "types": [
       "node"
     ]

@@ -1,4 +1,4 @@
-import { defineConfig } from '/Users/kevin_zjy/.dsh/plugins/dsh-operating-context/node_modules/tsdown/dist/index.mjs';
+import { defineConfig } from 'tsdown';
 
 export default defineConfig({
   clean: true,
@@ -9,5 +9,6 @@ export default defineConfig({
   },
   format: 'esm',
   outDir: 'lib',
+  outExtensions: () => ({ js: '.js' }),
   sourcemap: false,
 });

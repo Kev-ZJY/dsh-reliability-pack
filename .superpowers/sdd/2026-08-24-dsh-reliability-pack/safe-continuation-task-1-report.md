@@ -204,3 +204,59 @@ Remaining limitations at fix round 2 close:
 
 - local package `npm install` was still not relied on; verification used the explicitly provided existing toolchain under `/Users/kevin_zjy/.dsh/plugins/dsh-operating-context/node_modules/.bin/`
 - `bundle` script is declared for ordinary environments, but this round's proof used the absolute-path local `tsdown` plus the checked-in normalization step
+
+## Fix round 3 status
+
+Scoped findings fixed:
+
+- `tsdown.config.ts` now imports `defineConfig` from the package dependency name `tsdown`; it contains no sibling installation path.
+- `tsconfig.json` now uses the standard `types: ["node"]` setting without a sibling `typeRoots` override. The package manifest remains the source of the TypeScript, tsdown, and Node type declarations.
+- `tsdown.config.ts` requests `.js` ESM output. `scripts/normalize-lib.mjs` remains a compatibility cleanup for older tsdown output, removes conflicting generated targets, and rewrites relative `.mjs`/`.mts` declaration references to `.js`.
+- `runtime-contract.test.ts` now reads `lib/index.d.ts`, rejects `.mjs`/`.mts` references, and checks every relative declaration target exists.
+- A clean bundle removed the审查工具留下的 `lib/index.mjs`, `lib/runtime-types.mjs`, `lib/index.d.mts`, and `lib/runtime-types.d.mts`. Final `lib` contains only `index.js`, `index.d.ts`, `runtime-types.js`, and `runtime-types.d.ts`.
+- Temporary package-local symlinks used only for verification were removed; no `node_modules` directory or sibling-plugin file was committed.
+
+## Fix round 3 verification
+
+The requested offline installation was attempted once and did not wait on the network:
+
+```text
+$ npm install --offline --no-package-lock --ignore-scripts
+npm error code ENOTCACHED
+npm error request to https://registry.npmmirror.com/@types%2fnode failed: cache mode is 'only-if-cached' but no cached response is available.
+```
+
+Using temporary, uncommitted symlinks to the already available local executables, the package scripts were run successfully:
+
+```text
+$ npm run typecheck
+> dsh-safe-continuation@0.1.0 typecheck
+> tsc --pretty false --project tsconfig.json
+[exit 0]
+
+$ npm run bundle
+ℹ tsdown v0.22.14 powered by rolldown v1.2.4
+ℹ Cleaning 4 files
+ℹ lib/runtime-types.js    1.09 kB
+ℹ lib/index.js            0.09 kB
+ℹ lib/runtime-types.d.ts  1.21 kB
+ℹ lib/index.d.ts          0.49 kB
+✔ Build complete in 379ms
+
+$ npm test
+✔ dsh-safe-continuation loader contract is wired through the package manifest
+✔ dsh-safe-continuation package manifest forbids install-time build scripts
+✔ published declarations reference only existing package-local files
+✔ dsh-safe-continuation runtime adapter accepts the inspected event shape
+✔ dsh-safe-continuation request/context validator rejects invalid payloads
+ℹ tests 5
+ℹ pass 5
+ℹ fail 0
+```
+
+The final declaration begins with `import { SafeContinuationEnvelope } from "./runtime-types.js";`; the final `lib` scan found no `.mjs` or `.mts` files or declaration references. A repository scan of implementation/config files found no hard-coded `dsh-operating-context/node_modules` path.
+
+## Fix round 3 remaining risks
+
+- This environment cannot install the declared devDependencies offline because the npm cache lacks `@types/node`; a normal package consumer still needs the declared dependencies available from its registry/cache.
+- Task 1 remains intentionally limited to the loader/runtime contract and does not implement later guard, handler, or token-meter behavior.

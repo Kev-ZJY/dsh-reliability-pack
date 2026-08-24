@@ -90,7 +90,184 @@ function compilePatterns(config) {
 	return compiledPatterns;
 }
 //#endregion
+//#region src/retry-handler.ts
+const DIAGNOSTIC_EVENT_TYPE = "dsh-overload-retry/diagnostic";
+function isRecord(value) {
+	return typeof value === "object" && value !== null;
+}
+function numberField(value, key) {
+	if (!isRecord(value)) return void 0;
+	return typeof value[key] === "number" ? value[key] : void 0;
+}
+function stringField(value, key) {
+	if (!isRecord(value)) return void 0;
+	return typeof value[key] === "string" ? value[key] : void 0;
+}
+function defaultWait(delayMs, signal) {
+	if (signal.aborted) return Promise.resolve(false);
+	return new Promise((resolve) => {
+		const timer = setTimeout(() => {
+			signal.removeEventListener("abort", onAbort);
+			resolve(true);
+		}, delayMs);
+		function onAbort() {
+			clearTimeout(timer);
+			resolve(false);
+		}
+		signal.addEventListener("abort", onAbort, { once: true });
+	});
+}
+function toDisposable(value) {
+	return typeof value === "function" ? () => {
+		value();
+	} : () => {};
+}
+function sessionIdOf(agent) {
+	return agent.session.header?.id ?? agent.session.id ?? agent.id;
+}
+function attemptKey(sessionId, payload) {
+	return `${sessionId}:${payload.turn}:${payload.step}:${payload.provider}`;
+}
+function countDurableRetries(events, payload) {
+	let attempts = 0;
+	for (const event of events) {
+		if (event.type !== DIAGNOSTIC_EVENT_TYPE) continue;
+		if (stringField(event.data, "plugin") !== "dsh-overload-retry") continue;
+		if (stringField(event.data, "action") !== "retry-scheduled") continue;
+		if (numberField(event.data, "turn") !== payload.turn) continue;
+		if (numberField(event.data, "step") !== payload.step) continue;
+		if (stringField(event.data, "provider") !== payload.provider) continue;
+		attempts += 1;
+	}
+	return attempts;
+}
+function hasCommittedToolActivity(events, payload) {
+	return events.some((event) => {
+		if (event.type !== "tool/call" && event.type !== "tool/result") return false;
+		return numberField(event.data, "turn") === payload.turn && numberField(event.data, "step") === payload.step;
+	});
+}
+function diagnosticFor(payload, reason, retry, delayMs) {
+	return {
+		sessionId: sessionIdOf(payload.agent),
+		turn: payload.turn,
+		step: payload.step,
+		provider: payload.provider,
+		reason,
+		retry,
+		...delayMs === void 0 ? {} : { delayMs },
+		failure: {
+			code: payload.failure.code,
+			...payload.failure.status === void 0 ? {} : { status: payload.failure.status },
+			...payload.failure.providerRetryAfterMs === void 0 ? {} : { providerRetryAfterMs: payload.failure.providerRetryAfterMs }
+		}
+	};
+}
+function appendDurableDiagnostic(agent, payload, retry) {
+	if (typeof agent.session.append !== "function") return false;
+	const event = {
+		plugin: "dsh-overload-retry",
+		turn: payload.turn,
+		step: payload.step,
+		provider: payload.provider,
+		action: "retry-scheduled",
+		retry
+	};
+	agent.session.append(DIAGNOSTIC_EVENT_TYPE, event);
+	return true;
+}
+function createRuntime(ctx, options = {}, internals = {}) {
+	const config = normalizeOverloadRetryConfig(options);
+	const random = internals.random ?? Math.random;
+	const wait = internals.wait ?? defaultWait;
+	const attempts = /* @__PURE__ */ new Map();
+	const lifetime = new AbortController();
+	const active = /* @__PURE__ */ new Set();
+	let disposed = false;
+	function track(operation) {
+		const tracked = operation.finally(() => {
+			active.delete(tracked);
+		});
+		active.add(tracked);
+		return tracked;
+	}
+	async function listener(payload, next) {
+		if (disposed || lifetime.signal.aborted) {
+			options.onDiagnostic?.(diagnosticFor(payload, "disposed", 0));
+			return;
+		}
+		if (payload.signal.aborted) {
+			options.onDiagnostic?.(diagnosticFor(payload, "aborted", 0));
+			return;
+		}
+		const events = payload.agent.session.events ?? [];
+		if (hasCommittedToolActivity(events, payload)) {
+			options.onDiagnostic?.(diagnosticFor(payload, "committed-tool-activity", 0));
+			return next();
+		}
+		const classification = classifyOverload(config, {
+			provider: payload.provider,
+			code: payload.failure.code,
+			message: payload.failure.message
+		});
+		if (!classification.matched) {
+			options.onDiagnostic?.(diagnosticFor(payload, classification.reason, 0));
+			return next();
+		}
+		const key = attemptKey(sessionIdOf(payload.agent), payload);
+		const durableAttempts = countDurableRetries(events, payload);
+		const previousAttempts = durableAttempts > 0 ? durableAttempts : attempts.get(key) ?? 0;
+		if (previousAttempts >= config.maxRetries) {
+			options.onDiagnostic?.(diagnosticFor(payload, "max-retries-exhausted", previousAttempts));
+			return next();
+		}
+		const retry = previousAttempts + 1;
+		const delayMs = retryDelay(config, retry - 1, random());
+		if (!appendDurableDiagnostic(payload.agent, payload, retry)) attempts.set(key, retry);
+		const fused = AbortSignal.any([payload.signal, lifetime.signal]);
+		const diagnostic = diagnosticFor(payload, "retry", retry, delayMs);
+		options.onDiagnostic?.(diagnostic);
+		if (!await wait(delayMs, fused)) {
+			options.onDiagnostic?.(diagnosticFor(payload, "aborted", retry));
+			return;
+		}
+		if (disposed || lifetime.signal.aborted || payload.signal.aborted) {
+			options.onDiagnostic?.(diagnosticFor(payload, disposed ? "disposed" : "aborted", retry));
+			return;
+		}
+		return { kind: "retry" };
+	}
+	const unsubscribe = toDisposable(ctx.on?.("agent/request-error", (payload, next) => {
+		if (disposed || lifetime.signal.aborted) return Promise.resolve(void 0);
+		return track(listener(payload, next));
+	}, { prepend: true }));
+	return {
+		dispose: () => {
+			if (disposed) return;
+			disposed = true;
+			unsubscribe();
+			lifetime.abort(/* @__PURE__ */ new Error("dsh-overload-retry disposed"));
+		},
+		drain: Promise.resolve().then(async () => {
+			await Promise.allSettled([...active]);
+		})
+	};
+}
+function installOverloadRetry(ctx, options = {}, internals = {}) {
+	return createRuntime(ctx, options, internals).dispose;
+}
+function apply(ctx, config = {}) {
+	ctx.effect?.(() => {
+		const runtime = createRuntime(ctx, config);
+		return async () => {
+			runtime.dispose();
+			await runtime.drain;
+		};
+	}, "dsh-overload-retry: abort and drain active recovery");
+}
+//#endregion
 //#region src/index.ts
 const name = "dsh-overload-retry";
+var src_default = apply;
 //#endregion
-export { DEFAULT_OVERLOAD_RETRY_CONFIG, classifyOverload, name, normalizeOverloadRetryConfig, retryDelay };
+export { DEFAULT_OVERLOAD_RETRY_CONFIG, apply, classifyOverload, src_default as default, installOverloadRetry, name, normalizeOverloadRetryConfig, retryDelay };

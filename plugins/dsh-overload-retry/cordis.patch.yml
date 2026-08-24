@@ -1,8 +1,16 @@
-# Task 1 policy only: installable config surface and pure retry helpers.
-# Runtime request-error wiring is intentionally deferred.
+# The bundle inserts the host loader row. The loader invokes the package's
+# default export (`apply`) with this row's config; `apply` registers a
+# prepended `agent/request-error` listener, so it runs before the ordinary
+# dsh-llm-retry listener in the request-error waterfall.
+#
+# Keep the row disabled until the profile explicitly opts into overload retry.
+# The profile starter sets the finite retry budget to 8; direct API calls still
+# fail closed with the package defaults when no config is supplied.
 
 - insert:
     - id: overload-retry
       name: dsh-overload-retry
       config:
         enabled: false
+        providers: [openrouter1]
+        maxRetries: 8

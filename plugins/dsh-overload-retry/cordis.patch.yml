@@ -1,0 +1,8 @@
+# Task 1 policy only: installable config surface and pure retry helpers.
+# Runtime request-error wiring is intentionally deferred.
+
+- insert:
+    - id: overload-retry
+      name: dsh-overload-retry
+      config:
+        enabled: false

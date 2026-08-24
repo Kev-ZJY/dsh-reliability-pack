@@ -21,10 +21,21 @@ export interface OverloadClassificationInput {
   message: string;
 }
 
-export interface OverloadClassification {
-  matched: boolean;
-  reason: string;
-}
+export type OverloadClassification =
+  | {
+    matched: true;
+    reason: 'matched-message-pattern';
+  }
+  | {
+    matched: false;
+    reason:
+      | 'disabled'
+      | 'provider-not-allowed'
+      | 'code-not-pi-ai-error'
+      | 'message-excluded'
+      | 'invalid-config'
+      | 'message-not-overload';
+  };
 
 export function classifyOverload(
   config: OverloadRetryConfig,

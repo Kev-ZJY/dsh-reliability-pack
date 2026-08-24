@@ -98,7 +98,7 @@ interface RuntimeState {
   readonly drain: Promise<void>;
 }
 
-interface RetryDiagnosticEventData {
+interface RetryDiagnosticEventData extends Record<string, unknown> {
   readonly plugin: 'dsh-overload-retry';
   readonly turn: number;
   readonly step: number;

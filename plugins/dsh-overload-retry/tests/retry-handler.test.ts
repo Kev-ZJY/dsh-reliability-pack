@@ -47,7 +47,7 @@ function createContext() {
     },
     effect(factory) {
       const cleanup = factory();
-      cleanups.push(cleanup);
+      if (typeof cleanup === 'function') cleanups.push(cleanup);
       return cleanup;
     },
   };

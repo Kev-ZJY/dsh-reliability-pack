@@ -95,10 +95,13 @@ interface OverloadClassificationInput {
   code: string;
   message: string;
 }
-interface OverloadClassification {
-  matched: boolean;
-  reason: string;
-}
+type OverloadClassification = {
+  matched: true;
+  reason: 'matched-message-pattern';
+} | {
+  matched: false;
+  reason: 'disabled' | 'provider-not-allowed' | 'code-not-pi-ai-error' | 'message-excluded' | 'invalid-config' | 'message-not-overload';
+};
 declare function classifyOverload(config: OverloadRetryConfig, input: OverloadClassificationInput): OverloadClassification;
 declare function retryDelay(config: OverloadRetryConfig, retryIndex: number, randomValue: number): number;
 //#endregion

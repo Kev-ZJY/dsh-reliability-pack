@@ -1,6 +1,7 @@
 {
   "name": "dsh-reliability-pack",
   "version": "0.1.0",
+  "type": "module",
   "private": true,
   "description": "Opt-in reliability bundles and profile diagnostics for DeepSeek Harness.",
   "license": "MIT",
@@ -9,7 +10,7 @@
     "node": ">=22.19.0"
   },
   "scripts": {
-    "typecheck": "tsc -b --pretty false",
+    "typecheck": "pnpm -r typecheck",
     "test": "node --test --experimental-strip-types tests/**/*.test.ts",
     "bundle": "pnpm -r bundle"
   }

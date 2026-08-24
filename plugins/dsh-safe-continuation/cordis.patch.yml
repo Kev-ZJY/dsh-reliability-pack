@@ -1,5 +1,6 @@
-# Task 1 scaffold only: the bundle can be installed and mounted, but the
-# continuation guard/handler work stays disabled until later tasks land.
+# The bundle inserts the host loader row. Its default is intentionally disabled;
+# enable it per profile after reviewing the bounded continuation budgets and
+# guard policy documented in README.md.
 
 - insert:
     - id: safe-continuation

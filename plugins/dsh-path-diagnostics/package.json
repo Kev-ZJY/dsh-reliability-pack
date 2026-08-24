@@ -25,7 +25,7 @@
   },
   "scripts": {
     "test": "node --test --experimental-strip-types tests/**/*.test.ts",
-    "typecheck": "tsc --pretty false --target ES2022 --module NodeNext --moduleResolution NodeNext --strict --noEmit --allowImportingTsExtensions --types node src/**/*.ts tests/**/*.test.ts",
+    "typecheck": "tsc --pretty false --target ES2022 --module NodeNext --moduleResolution NodeNext --strict --noEmit --allowImportingTsExtensions --types node src/*.ts tests/*.test.ts",
     "bundle": "tsdown src/index.ts --dts --format esm --out-dir lib --clean && node --input-type=module -e \"import { rename } from 'node:fs/promises'; await rename('lib/index.mjs', 'lib/index.js'); await rename('lib/index.d.mts', 'lib/index.d.ts');\""
   },
   "dsh": {

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { basename } from "node:path";
+import { copyFile, lstat, mkdir, readFile, writeFile } from "node:fs/promises";
+import { basename, join, resolve } from "node:path";
+import { execFile } from "node:child_process";
 //#region src/hash.ts
 function sha256(value) {
 	return createHash("sha256").update(value).digest("hex");
@@ -79,7 +80,7 @@ function packageName(value) {
 function packageVersion(value) {
 	return typeof value.version === "string" ? value.version : void 0;
 }
-function resultCode(result) {
+function resultCode$1(result) {
 	return result.exitCode ?? result.code ?? result.status ?? 1;
 }
 function packageChecks(input) {
@@ -155,7 +156,7 @@ async function inspectProfile(input) {
 		} catch {
 			commandResult = void 0;
 		}
-		const ok = commandResult !== void 0 && resultCode(commandResult) === 0;
+		const ok = commandResult !== void 0 && resultCode$1(commandResult) === 0;
 		checks.push(check("config-dump", ok, ok ? "config dump completed" : "config dump failed"));
 	}
 	const ok = checks.every((item) => item.ok);
@@ -332,4 +333,234 @@ async function inspectTokenMeter(input) {
 	return report;
 }
 //#endregion
-export { inspectProfile, inspectTokenMeter, sha256, sha256File };
+//#region src/backup.ts
+const BACKUP_INPUTS = [
+	{
+		name: "profile-manifest",
+		filename: "package.json"
+	},
+	{
+		name: "lockfile",
+		filename: "pnpm-lock.yaml"
+	},
+	{
+		name: "workspace-policy",
+		filename: "pnpm-workspace.yaml"
+	},
+	{
+		name: "cordis-patch",
+		filename: "cordis.patch.yml"
+	}
+];
+function safeTimestamp(timestamp) {
+	return timestamp.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^[-.]+|[-.]+$/g, "") || `backup-${Date.now()}`;
+}
+async function createBackup(profileRoot, timestamp = (/* @__PURE__ */ new Date()).toISOString()) {
+	const root = resolve(profileRoot);
+	const sources = BACKUP_INPUTS.map((input) => ({
+		...input,
+		sourcePath: join(root, input.filename)
+	}));
+	for (const source of sources) if (!(await lstat(source.sourcePath)).isFile()) throw new Error(`${source.filename} is not a regular profile file`);
+	const createdAt = (/* @__PURE__ */ new Date()).toISOString();
+	const directory = join(root, ".dsh-doctor", "backups", safeTimestamp(timestamp));
+	await mkdir(directory, { recursive: true });
+	const files = [];
+	for (const source of sources) {
+		const backupPath = join(directory, source.filename);
+		await copyFile(source.sourcePath, backupPath);
+		files.push({
+			name: source.name,
+			sourcePath: source.sourcePath,
+			backupPath,
+			sha256: await sha256File(backupPath)
+		});
+	}
+	const manifestPath = join(directory, "manifest.json");
+	const manifest = {
+		schemaVersion: 1,
+		createdAt,
+		directory,
+		files,
+		manifestPath
+	};
+	await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+	return manifest;
+}
+//#endregion
+//#region src/commands.ts
+function output(io, text) {
+	(io.stdout ?? ((value) => process.stdout.write(`${value}\n`)))(text);
+}
+function errorOutput(io, text) {
+	(io.stderr ?? ((value) => process.stderr.write(`${value}\n`)))(text);
+}
+function resultCode(result) {
+	return result?.exitCode ?? result?.code ?? result?.status ?? 1;
+}
+function redactSecrets(text) {
+	let redacted = text.replace(/((?:api[_-]?key|access[_-]?token|authorization|password|secret|token)\s*[:=]\s*)(["']?)([^,\s}\]"']+)\2/gi, "$1$2[REDACTED]$2");
+	redacted = redacted.replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED]");
+	return redacted.replace(/\b(?:sk|rk|pk)-[A-Za-z0-9][A-Za-z0-9_-]{5,}\b/g, "[REDACTED]");
+}
+function formatCheckResult(result) {
+	return result.checks.map((check) => {
+		const state = check.ok ? "ok" : "failed";
+		const details = [
+			check.message,
+			check.path === void 0 ? void 0 : `path=${check.path}`,
+			check.expected === void 0 ? void 0 : `expected=${check.expected}`,
+			check.actual === void 0 ? void 0 : `actual=${check.actual}`
+		].filter((value) => value !== void 0);
+		return `[${state}] ${check.id}: ${details.join("; ")}`;
+	}).join("\n");
+}
+function formatTokenMeterReport(report) {
+	return JSON.stringify(report, null, 2);
+}
+async function defaultCommandRunner(command, args) {
+	return new Promise((resolve) => {
+		execFile(command, [...args], { encoding: "utf8" }, (error, stdout, stderr) => {
+			if (error !== null) {
+				resolve({
+					exitCode: typeof error.code === "number" ? error.code : typeof error.code === "string" && /^\d+$/.test(error.code) ? Number(error.code) : 1,
+					stdout,
+					stderr
+				});
+				return;
+			}
+			resolve({
+				exitCode: 0,
+				stdout,
+				stderr
+			});
+		});
+	});
+}
+function runnerFor(args, io) {
+	return args.runCommand ?? args.commandRunner ?? io.commandRunner ?? defaultCommandRunner;
+}
+function parseDoctorArgs(argv) {
+	const command = argv[0];
+	if (command !== "check" && command !== "report-token-meter" && command !== "update-profile") throw new Error("expected check, report-token-meter, or update-profile");
+	let profile;
+	let preview = false;
+	for (let index = 1; index < argv.length; index += 1) {
+		const argument = argv[index];
+		if (argument === "--profile") {
+			profile = argv[index + 1];
+			index += 1;
+			continue;
+		}
+		if (argument === "--preview" && command === "update-profile") {
+			preview = true;
+			continue;
+		}
+		throw new Error(`unknown argument: ${argument}`);
+	}
+	if (profile === void 0 || profile.length === 0) throw new Error("--profile is required");
+	if (preview && command !== "update-profile") throw new Error("--preview is only valid for update-profile");
+	return {
+		command,
+		profile,
+		preview
+	};
+}
+async function runCheck(args, io = {}) {
+	const inspector = io.inspectProfile ?? inspectProfile;
+	const runner = runnerFor(args, io);
+	try {
+		const result = await inspector({
+			...args,
+			runCommand: runner,
+			profileName: args.profileName ?? (args.profileRoot === void 0 ? void 0 : basename(args.profileRoot))
+		});
+		const message = redactSecrets(formatCheckResult(result));
+		(result.ok ? output : errorOutput)(io, message);
+		return result.ok ? 0 : 1;
+	} catch (caught) {
+		errorOutput(io, `check failed: ${redactSecrets(caught instanceof Error ? caught.message : String(caught))}`);
+		return 1;
+	}
+}
+async function runTokenMeterReport(args, io = {}) {
+	const inspector = io.inspectTokenMeter ?? inspectTokenMeter;
+	try {
+		output(io, redactSecrets(formatTokenMeterReport(await inspector(args))));
+		return 0;
+	} catch (caught) {
+		errorOutput(io, `token-meter report failed: ${redactSecrets(caught instanceof Error ? caught.message : String(caught))}`);
+		return 1;
+	}
+}
+function updateCommand(profile) {
+	return [
+		"plugin",
+		"--profile",
+		profile,
+		"update"
+	];
+}
+function dumpConfigCommand(profile) {
+	return [
+		"--profile",
+		profile,
+		"--dump-config"
+	];
+}
+function backupFailureMessage(backup, detail) {
+	return `${(detail.length === 0 ? "" : ` ${redactSecrets(detail)}`).trim()} backup: ${backup.directory}`.trim();
+}
+async function runProfileUpdate(args, io = {}) {
+	if (args.preview === true) {
+		output(io, `preview: would update profile ${redactSecrets(args.profile)}; no files changed`);
+		return 0;
+	}
+	const makeBackup = io.createBackup ?? createBackup;
+	let backup;
+	try {
+		backup = await makeBackup(args.profileRoot, args.timestamp);
+	} catch (caught) {
+		errorOutput(io, `profile backup failed: ${redactSecrets(caught instanceof Error ? caught.message : String(caught))}`);
+		return 1;
+	}
+	const runner = runnerFor(args, io);
+	let updateResult;
+	try {
+		updateResult = await runner("dsh", updateCommand(args.profile));
+	} catch (caught) {
+		const message = caught instanceof Error ? caught.message : String(caught);
+		errorOutput(io, `profile update failed: ${backupFailureMessage(backup, message)}`);
+		return 1;
+	}
+	if (resultCode(updateResult) !== 0) {
+		errorOutput(io, `profile update failed with exit code ${resultCode(updateResult)}: ${backupFailureMessage(backup, updateResult.stderr ?? "")}`);
+		return 1;
+	}
+	const inspector = io.inspectProfile ?? inspectProfile;
+	const validationInput = {
+		...args,
+		profilePath: args.profilePath ?? args.profileRoot,
+		profileName: args.profile,
+		runCommand: runner,
+		dumpConfig: {
+			command: "dsh",
+			args: dumpConfigCommand(args.profile)
+		}
+	};
+	try {
+		const validation = await inspector(validationInput);
+		if (!validation.ok) {
+			errorOutput(io, `post-update validation failed: ${backupFailureMessage(backup, formatCheckResult(validation))}`);
+			return 1;
+		}
+	} catch (caught) {
+		const message = caught instanceof Error ? caught.message : String(caught);
+		errorOutput(io, `post-update validation failed: ${backupFailureMessage(backup, message)}`);
+		return 1;
+	}
+	output(io, `profile update validated; backup: ${backup.directory}`);
+	return 0;
+}
+//#endregion
+export { createBackup, defaultCommandRunner, inspectProfile, inspectTokenMeter, parseDoctorArgs, redactSecrets, runCheck, runProfileUpdate, runTokenMeterReport, sha256, sha256File };

@@ -108,4 +108,49 @@ declare function inspectProfile(input: ProfileInspectInput): Promise<ProfileChec
 //#region src/inspect-token-meter.d.ts
 declare function inspectTokenMeter(input: TokenMeterInspectInput): Promise<TokenMeterReport>;
 //#endregion
-export { type CheckItem, type CommandResult, type CommandRunner, type DumpConfigCommand, type FingerprintDefinition, type FingerprintReport, type NegativeValue, type ProfileCheckResult, type ProfileInspectInput, type ProfilePackageCheck, type StatusRecord, type TokenMeterInspectInput, type TokenMeterReport, inspectProfile, inspectTokenMeter, sha256, sha256File };
+//#region src/backup.d.ts
+type BackupFileName = 'profile-manifest' | 'lockfile' | 'workspace-policy' | 'cordis-patch';
+type BackupFile = {
+  name: BackupFileName;
+  sourcePath: string;
+  backupPath: string;
+  sha256: string;
+};
+type BackupManifest = {
+  schemaVersion: 1;
+  createdAt: string;
+  directory: string;
+  files: BackupFile[];
+  manifestPath: string;
+};
+declare function createBackup(profileRoot: string, timestamp?: string): Promise<BackupManifest>;
+//#endregion
+//#region src/commands.d.ts
+type DoctorCommand = 'check' | 'report-token-meter' | 'update-profile';
+type ParsedDoctorArgs = {
+  command: DoctorCommand;
+  profile: string;
+  preview: boolean;
+};
+type ProfileUpdateArgs = ProfileInspectInput & {
+  profile: string;
+  profileRoot: string;
+  preview?: boolean;
+  timestamp?: string;
+};
+type DoctorIO = {
+  stdout?: (text: string) => void;
+  stderr?: (text: string) => void;
+  commandRunner?: CommandRunner;
+  inspectProfile?: typeof inspectProfile;
+  inspectTokenMeter?: typeof inspectTokenMeter;
+  createBackup?: typeof createBackup;
+};
+declare function redactSecrets(text: string): string;
+declare function defaultCommandRunner(command: string, args: readonly string[]): Promise<CommandResult>;
+declare function parseDoctorArgs(argv: readonly string[]): ParsedDoctorArgs;
+declare function runCheck(args: ProfileInspectInput, io?: DoctorIO): Promise<number>;
+declare function runTokenMeterReport(args: TokenMeterInspectInput, io?: DoctorIO): Promise<number>;
+declare function runProfileUpdate(args: ProfileUpdateArgs, io?: DoctorIO): Promise<number>;
+//#endregion
+export { BackupFile, BackupFileName, BackupManifest, type CheckItem, type CommandResult, type CommandRunner, DoctorCommand, DoctorIO, type DumpConfigCommand, type FingerprintDefinition, type FingerprintReport, type NegativeValue, ParsedDoctorArgs, type ProfileCheckResult, type ProfileInspectInput, type ProfilePackageCheck, ProfileUpdateArgs, type StatusRecord, type TokenMeterInspectInput, type TokenMeterReport, createBackup, defaultCommandRunner, inspectProfile, inspectTokenMeter, parseDoctorArgs, redactSecrets, runCheck, runProfileUpdate, runTokenMeterReport, sha256, sha256File };

@@ -15,7 +15,7 @@ Date: 2026-08-24
 
 ## Verified public API
 
-Observed from installed local package artifacts and public type declarations:
+Observed from globally installed `@deepseek-ai/dsh@0.1.1-rc.2` artifacts and public type declarations:
 
 - Bundle discovery is manifest-driven through `package.json -> dsh.bundle.patch`, not code scanning.
 - Profile patch files are top-level YAML arrays consumed as `cordis.patch.yml`.
@@ -24,16 +24,15 @@ Observed from installed local package artifacts and public type declarations:
 - Public durable session metadata includes `Session.header.id` and related `SessionHeader` fields.
 - `@deepseek-ai/dsh-token-meter` publicly measures `measure(session, requestHeader?)` and uses bounded session/event folds; task 1 kept this as a read-only boundary and did not patch token-meter behavior.
 
-Primary evidence read during implementation:
+Additional rc2 evidence captured during fix round 1:
 
-- `~/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh/package.json`
-- `~/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh/lib/plugin-9h8shc4d.js`
-- `~/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-app-boot/README.md`
-- `~/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-session/lib/types/index.d.ts`
-- `~/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-session/lib/types/types.d.ts`
-- `~/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-token-meter/lib/types/index.d.ts`
-- `~/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-token-meter/lib/types/usage-projection.d.ts`
-- `~/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh-token-meter/lib/types/surface-projection.d.ts`
+- Global version probe:
+  - command: `node -p "require('/opt/homebrew/lib/node_modules/@deepseek-ai/dsh/package.json').version"`
+  - result: `0.1.1-rc.2`
+- evidence path: `/opt/homebrew/lib/node_modules/@deepseek-ai/dsh/package.json`
+- evidence path: `/opt/homebrew/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-agent/lib/types/runtime-types.d.ts`
+- evidence path: `/opt/homebrew/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-agent/lib/types/runtime-types.d.ts` (`agent/turn-stopping` payload `{ agent, turn, signal }`)
+- evidence path: `/opt/homebrew/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-agent/lib/types/runtime-types.d.ts` and adjacent public `Agent` declaration (`Agent.steer(message)`)
 
 ## Verification commands and output
 
@@ -77,8 +76,67 @@ $ npm run typecheck
 sh: tsc: command not found
 ```
 
+4. Fix round 1 reproducible red-phase evidence on the parent commit of `ab55a75`
+
+```text
+$ git worktree add /Users/kevin_zjy/.dsh/reliability-pack/.worktrees/safe-continuation-red-phase 2a23262e218f71113e5c2cfc383608a11017b48a
+Preparing worktree (detached HEAD 2a23262)
+HEAD is now at 2a23262 chore: scaffold dsh reliability pack
+
+$ test -d /Users/kevin_zjy/.dsh/reliability-pack/.worktrees/safe-continuation-red-phase/plugins/dsh-safe-continuation; echo $?
+1
+
+$ npm --prefix /Users/kevin_zjy/.dsh/reliability-pack/.worktrees/safe-continuation-red-phase/plugins/dsh-safe-continuation test
+npm error code ENOENT
+npm error syscall open
+npm error path /Users/kevin_zjy/.dsh/reliability-pack/.worktrees/safe-continuation-red-phase/plugins/dsh-safe-continuation/package.json
+npm error errno -2
+npm error enoent Could not read package.json: Error: ENOENT: no such file or directory, open '/Users/kevin_zjy/.dsh/reliability-pack/.worktrees/safe-continuation-red-phase/plugins/dsh-safe-continuation/package.json'
+```
+
+5. Fix round 1 current red test after tightening the contract
+
+```text
+$ npm run test
+
+> dsh-safe-continuation@0.1.0 test
+> node --test --experimental-strip-types tests/**/*.test.ts
+
+✖ dsh-safe-continuation loader contract is wired through the package manifest
+...
+AssertionError [ERR_ASSERTION]:
++ actual - expected
+
++ './src/index.ts'
+- './lib/index.js'
+```
+
+6. Dependency install attempt blocked during fix round 1
+
+```text
+$ npm install --no-package-lock --save-dev typescript tsdown @types/node
+```
+
+This command did not complete and produced no diagnostic output before manual interruption in the current restricted environment, so `typecheck`/`bundle` remained blocked by missing toolchain dependencies.
+
+## Fix round 1 status
+
+Completed and preserved:
+
+- corrected API verification source to the global rc2 installation path
+- added reproducible parent-commit red-phase evidence via a temporary git worktree
+- tightened `runtime-contract.test.ts` to require `lib` exports and explicit `request/context` validator coverage
+- ignored `.worktrees/` in repo `.gitignore`
+
+Still not fixed in this commit:
+
+- package manifest still exports `src`, not prebuilt `lib`
+- no `tsdown` config or toolchain declarations landed yet
+- `tsconfig.json` still does not include `tests/**/*.test.ts`
+- `typecheck` and `bundle` remain blocked by missing local toolchain dependencies
+
 ## Unresolved risks
 
-- The brief requested verification against installed `@deepseek-ai/dsh@0.1.1-rc.2`, but the locally discoverable installed package was `0.1.0-rc.6` under `~/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh/package.json`. Task 1 therefore reflects the public API of that installed artifact, not the requested version.
-- Package typecheck could not complete because `tsc` was not available on PATH in this environment.
-- The scaffold intentionally stops at manifest/patch/loader/runtime-type contract. No continuation guard, handler, or token-meter behavioral integration is implemented in task 1.
+- Fix round 1 ends in a known red state: the tightened contract test now fails against the current manifest because the prebuilt `lib` contract is not implemented yet.
+- Dependency installation did not complete in the current environment, so no fresh `typecheck` or `bundle` evidence exists.
+- The scaffold still intentionally stops at manifest/patch/loader/runtime-type contract. No continuation guard, handler, or token-meter behavioral integration is implemented in task 1.

@@ -75,13 +75,13 @@ interface SafeContinuationRuntimeOptions extends ContinuationConfigInput {
 }
 interface SafeContinuationContext {
   on?(eventName: 'agent/turn-stopping', listener: (payload: TurnStoppingPayload) => void | Promise<void>): unknown;
+  effect?(factory: () => Disposable, label?: string): unknown;
 }
 declare function installSafeContinuation(ctx: SafeContinuationContext, options?: SafeContinuationRuntimeOptions): Disposable;
 //#endregion
 //#region src/index.d.ts
-interface SafeContinuationConfig {
-  enabled?: boolean;
-}
-declare function load(_ctx: SafeContinuationContext): void;
+declare const name = "dsh-safe-continuation";
+interface SafeContinuationConfig extends SafeContinuationRuntimeOptions {}
+declare function apply(ctx: SafeContinuationContext, config?: SafeContinuationConfig): void;
 //#endregion
-export { type ContinuationConfig, type ContinuationConfigInput, type ContinuationDecision, type ContinuationObservation, type ContinuationRuntimeDiagnostic, DEFAULT_CONTINUATION_CONFIG, SafeContinuationConfig, type SafeContinuationContext, type SafeContinuationRuntimeOptions, decideContinuation, load as default, load, installSafeContinuation, normalizeContinuationConfig };
+export { type ContinuationConfig, type ContinuationConfigInput, type ContinuationDecision, type ContinuationObservation, type ContinuationRuntimeDiagnostic, DEFAULT_CONTINUATION_CONFIG, SafeContinuationConfig, type SafeContinuationContext, type SafeContinuationRuntimeOptions, apply, apply as default, decideContinuation, installSafeContinuation, name, normalizeContinuationConfig };

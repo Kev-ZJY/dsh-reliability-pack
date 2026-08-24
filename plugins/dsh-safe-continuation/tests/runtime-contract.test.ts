@@ -18,7 +18,8 @@ test('dsh-safe-continuation loader contract is wired through the package manifes
     };
   };
 
-  assert.equal(typeof mod.load, 'function');
+  assert.equal(mod.name, 'dsh-safe-continuation');
+  assert.equal(typeof mod.apply, 'function');
   assert.equal(manifest.exports?.['.'], './lib/index.js');
   assert.equal(manifest.exports?.['./runtime-types'], './lib/runtime-types.js');
   assert.equal(manifest.dsh?.bundle?.patch, './cordis.patch.yml');
@@ -30,7 +31,8 @@ test('dsh-safe-continuation loader contract is wired through the package manifes
   const builtLoader = await import(pathToFileURL(builtLoaderPath.pathname).href);
   const builtRuntimeTypes = await import(pathToFileURL(builtRuntimeTypesPath.pathname).href);
 
-  assert.equal(typeof builtLoader.load, 'function');
+  assert.equal(builtLoader.name, 'dsh-safe-continuation');
+  assert.equal(typeof builtLoader.apply, 'function');
   assert.equal(typeof builtRuntimeTypes.isSafeContinuationRequestContext, 'function');
 });
 

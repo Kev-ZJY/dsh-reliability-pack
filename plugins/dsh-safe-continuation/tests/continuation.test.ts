@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  apply,
   installSafeContinuation,
   type ContinuationRuntimeDiagnostic,
   type SafeContinuationContext,
@@ -55,6 +56,7 @@ class FakeAgent {
 
 function createContext() {
   let listener: ((payload: { agent: FakeAgent; turn: number; signal: FakeAbortSignal }) => void | Promise<void>) | undefined;
+  const cleanups: Array<() => void> = [];
 
   const ctx: SafeContinuationContext = {
     on(eventName, candidate) {
@@ -64,10 +66,20 @@ function createContext() {
         listener = undefined;
       };
     },
+    effect(factory) {
+      const cleanup = factory();
+      cleanups.push(cleanup);
+      return cleanup;
+    },
   };
 
   return {
     ctx,
+    disposeEffects() {
+      while (cleanups.length > 0) {
+        cleanups.pop()?.();
+      }
+    },
     async emit(payload: { agent: FakeAgent; turn: number; signal?: FakeAbortSignal }) {
       if (!listener) return;
       await listener({
@@ -238,4 +250,33 @@ test('skips continuation when the signal is already aborted and after disposal',
 
   assert.equal(abortedAgent.steerCalls.length, 0);
   assert.equal(disposedAgent.steerCalls.length, 0);
+});
+
+test('apply installs the turn-stopping hook through ctx.effect and steers on max-tokens', async () => {
+  const { ctx, emit } = createContext();
+  const agent = createAgent();
+
+  apply(ctx, {
+    enabled: true,
+    prompt: 'Continue safely.',
+  });
+
+  await emit({ agent, turn: 1 });
+
+  assert.equal(agent.steerCalls.length, 1);
+});
+
+test('apply cleanup disposes the installed turn-stopping hook', async () => {
+  const { ctx, emit, disposeEffects } = createContext();
+  const agent = createAgent();
+
+  apply(ctx, {
+    enabled: true,
+    prompt: 'Continue safely.',
+  });
+  disposeEffects();
+
+  await emit({ agent, turn: 1 });
+
+  assert.equal(agent.steerCalls.length, 0);
 });

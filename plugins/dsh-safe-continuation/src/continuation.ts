@@ -61,6 +61,7 @@ export interface SafeContinuationContext {
     eventName: 'agent/turn-stopping',
     listener: (payload: TurnStoppingPayload) => void | Promise<void>,
   ): unknown;
+  effect?(factory: () => Disposable, label?: string): unknown;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

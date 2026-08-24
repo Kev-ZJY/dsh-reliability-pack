@@ -15,12 +15,19 @@ export {
   type SafeContinuationContext,
   type SafeContinuationRuntimeOptions,
 } from './continuation.ts';
+import { installSafeContinuation } from './continuation.ts';
 import type { SafeContinuationContext } from './continuation.ts';
+import type { SafeContinuationRuntimeOptions } from './continuation.ts';
 
-export interface SafeContinuationConfig {
-  enabled?: boolean;
+export const name = 'dsh-safe-continuation';
+
+export interface SafeContinuationConfig extends SafeContinuationRuntimeOptions {}
+
+export function apply(ctx: SafeContinuationContext, config: SafeContinuationConfig = {}): void {
+  ctx.effect?.(
+    () => installSafeContinuation(ctx, config),
+    'dsh-safe-continuation: dispose',
+  );
 }
 
-export function load(_ctx: SafeContinuationContext): void {}
-
-export default load;
+export default apply;

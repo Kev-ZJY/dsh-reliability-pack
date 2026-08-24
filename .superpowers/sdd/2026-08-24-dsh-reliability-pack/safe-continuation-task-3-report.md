@@ -18,6 +18,8 @@ Status: DONE
 ## Implemented runtime wiring
 
 - added `installSafeContinuation(ctx, options): Disposable`
+- exported public Cordis plugin entry `apply(ctx, config)` and `name = "dsh-safe-continuation"`
+- mounted runtime wiring through public `ctx.effect(() => installSafeContinuation(ctx, config), 'dsh-safe-continuation: dispose')`
 - subscribed only to the public `agent/turn-stopping` seam
 - built steering messages with public `createUserMessage(...)` from `@deepseek-ai/dsh-llm`
 - sent plugin-authored user messages through public `Agent.steer(UserMessage)`
@@ -66,12 +68,16 @@ Green and full verification:
 
 ```text
 $ node --test --experimental-strip-types tests/continuation.test.ts
-ℹ pass 6
+ℹ pass 8
+ℹ fail 0
+
+$ node --test --experimental-strip-types tests/runtime-contract.test.ts
+ℹ pass 5
 ℹ fail 0
 
 $ npm test
-ℹ tests 19
-ℹ pass 19
+ℹ tests 21
+ℹ pass 21
 ℹ fail 0
 
 $ npm run typecheck
@@ -95,6 +101,7 @@ $ npm run bundle
   - `.bin/tsdown`
 - used them only to run tests, typecheck, and bundle in this restricted workspace
 - they are not part of the committed result and were removed before finalizing
+- without those temporary symlinks, local standalone `npm test` in this workspace fails at module resolution for the unresolved peer `@deepseek-ai/dsh-llm`; that environment limitation is local verification-only and no `node_modules` content is committed
 
 ## Remaining risks
 

@@ -186,6 +186,9 @@ function installSafeContinuation(ctx, options = {}) {
 }
 //#endregion
 //#region src/index.ts
-function load(_ctx) {}
+const name = "dsh-safe-continuation";
+function apply(ctx, config = {}) {
+	ctx.effect?.(() => installSafeContinuation(ctx, config), "dsh-safe-continuation: dispose");
+}
 //#endregion
-export { DEFAULT_CONTINUATION_CONFIG, decideContinuation, load as default, load, installSafeContinuation, normalizeContinuationConfig };
+export { DEFAULT_CONTINUATION_CONFIG, apply, apply as default, decideContinuation, installSafeContinuation, name, normalizeContinuationConfig };

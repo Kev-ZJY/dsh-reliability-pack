@@ -127,8 +127,97 @@ async function searchUniqueCandidate(root, requestedPath, config, adapter, signa
 	return candidates.length === 1 ? { candidate: candidates[0] } : { reason: "no-match" };
 }
 //#endregion
+//#region src/diagnostics.ts
+function isRecord(value) {
+	return typeof value === "object" && value !== null;
+}
+function stringField(value, key) {
+	return isRecord(value) && typeof value[key] === "string" ? value[key] : void 0;
+}
+function requestedPathOf(exec) {
+	if (!isRecord(exec.arguments)) return void 0;
+	return stringField(exec.arguments, "file_path") ?? stringField(exec.arguments, "path");
+}
+function errorCodeOf(result) {
+	if (result.isError !== true || !result.error) return void 0;
+	return stringField(result.error.info, "code") ?? stringField(result.error, "code");
+}
+function workspaceOf(exec) {
+	const cwd = exec.agent?.session?.header?.cwd;
+	return typeof cwd === "string" && cwd.length > 0 ? cwd : void 0;
+}
+function adapterFor(fs, cwd, signal) {
+	if (!fs.resolve || !fs.processPath || !fs.lstat || !fs.listDir) return void 0;
+	return {
+		async lstat(path, childSignal) {
+			const metadata = await fs.lstat?.(path, { cwd }, childSignal ?? signal);
+			if (!metadata || typeof metadata.type !== "string") return void 0;
+			return { type: metadata.type };
+		},
+		async listDir(path, childSignal) {
+			const target = await fs.resolve?.(path, {
+				cwd,
+				signal: childSignal ?? signal
+			});
+			if (target === void 0) throw new Error("path could not be resolved");
+			const entries = await fs.listDir?.(target, childSignal ?? signal);
+			if (!entries) throw new Error("directory could not be listed");
+			return entries.flatMap((entry) => {
+				const name = entry.name;
+				const childTarget = entry.target;
+				if (typeof name !== "string" || childTarget === void 0) return [];
+				const childPath = fs.processPath?.(childTarget);
+				if (typeof childPath !== "string") return [];
+				return [{
+					name,
+					path: childPath,
+					type: entry.type === "file" || entry.type === "directory" ? entry.type : "other"
+				}];
+			});
+		}
+	};
+}
+async function diagnoseReadFailure(event, fallbackConfig = DEFAULT_PATH_DIAGNOSTIC_CONFIG) {
+	if (event.exec.name !== "read" || errorCodeOf(event.result) !== "FS_NOT_FOUND") return void 0;
+	const requestedPath = requestedPathOf(event.exec);
+	const cwd = workspaceOf(event.exec);
+	const fs = event.fs;
+	if (!requestedPath || !cwd || !fs) return void 0;
+	const config = event.config ?? fallbackConfig;
+	const adapter = adapterFor(fs, cwd, event.exec.signal);
+	if (!adapter) return void 0;
+	const result = await searchUniqueCandidate(cwd, requestedPath, config, adapter, event.exec.signal);
+	if (!("candidate" in result)) return void 0;
+	return {
+		kind: "dsh-path-diagnostics",
+		requestedPath,
+		candidate: result.candidate,
+		instruction: "re-read the file explicitly before editing or continuing"
+	};
+}
+function toDisposable(value) {
+	return typeof value === "function" ? () => value() : () => {};
+}
+function installPathDiagnostics(ctx, options = DEFAULT_PATH_DIAGNOSTIC_CONFIG) {
+	return toDisposable(ctx.on?.("tools/post-execute", async (exec, result, next) => {
+		if (options.enabled) try {
+			const diagnostic = await diagnoseReadFailure({
+				exec,
+				result,
+				fs: ctx.fs,
+				config: options
+			});
+			if (diagnostic) options.onDiagnostic?.(diagnostic);
+		} catch {}
+		return next();
+	}, { prepend: true }));
+}
+//#endregion
 //#region src/index.ts
 const name = "dsh-path-diagnostics";
-function apply(_ctx, _config = DEFAULT_PATH_DIAGNOSTIC_CONFIG) {}
+function apply(ctx, config = DEFAULT_PATH_DIAGNOSTIC_CONFIG) {
+	if (ctx.effect) ctx.effect(() => installPathDiagnostics(ctx, config), "dsh-path-diagnostics: dispose post-execute observer");
+	else installPathDiagnostics(ctx, config);
+}
 //#endregion
-export { DEFAULT_PATH_DIAGNOSTIC_CONFIG, apply, apply as default, isWithinWorkspace, name, normalizeContainedPath, normalizeWorkspaceRoot, searchUniqueCandidate };
+export { DEFAULT_PATH_DIAGNOSTIC_CONFIG, apply, apply as default, diagnoseReadFailure, installPathDiagnostics, isWithinWorkspace, name, normalizeContainedPath, normalizeWorkspaceRoot, searchUniqueCandidate };

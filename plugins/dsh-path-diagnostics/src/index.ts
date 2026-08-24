@@ -2,6 +2,15 @@ import {
   DEFAULT_PATH_DIAGNOSTIC_CONFIG,
   type PathDiagnosticConfig,
 } from './search.ts';
+import { installPathDiagnostics } from './diagnostics.ts';
+export {
+  diagnoseReadFailure,
+  installPathDiagnostics,
+  type PathDiagnostic,
+  type PathDiagnosticEvent,
+  type PathDiagnosticsOptions,
+  type PathDiagnosticsRuntimeContext,
+} from './diagnostics.ts';
 
 export {
   DEFAULT_PATH_DIAGNOSTIC_CONFIG,
@@ -21,10 +30,14 @@ export {
 export const name = 'dsh-path-diagnostics';
 
 export function apply(
-  _ctx: unknown,
-  _config: PathDiagnosticConfig = DEFAULT_PATH_DIAGNOSTIC_CONFIG,
+  ctx: import('./diagnostics.ts').PathDiagnosticsRuntimeContext,
+  config: PathDiagnosticConfig = DEFAULT_PATH_DIAGNOSTIC_CONFIG,
 ): void {
-  // Task 2 wires this scaffold to the verified tools/post-execute seam.
+  if (ctx.effect) {
+    ctx.effect(() => installPathDiagnostics(ctx, config), 'dsh-path-diagnostics: dispose post-execute observer');
+  } else {
+    installPathDiagnostics(ctx, config);
+  }
 }
 
 export default apply;

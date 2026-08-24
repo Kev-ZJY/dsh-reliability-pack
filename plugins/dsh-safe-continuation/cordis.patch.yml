@@ -1,0 +1,8 @@
+# Task 1 scaffold only: the bundle can be installed and mounted, but the
+# continuation guard/handler work stays disabled until later tasks land.
+
+- insert:
+    - id: safe-continuation
+      name: dsh-safe-continuation
+      config:
+        enabled: false

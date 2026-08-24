@@ -1,0 +1,26 @@
+{
+  "name": "dsh-safe-continuation",
+  "version": "0.1.0",
+  "description": "Scaffolded bundle for safe continuation runtime contracts in DeepSeek Harness.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./runtime-types": "./src/runtime-types.ts"
+  },
+  "files": [
+    "cordis.patch.yml",
+    "src",
+    "README.md",
+    "README.zh.md"
+  ],
+  "scripts": {
+    "test": "node --test --experimental-strip-types tests/**/*.test.ts",
+    "typecheck": "tsc --pretty false --project tsconfig.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

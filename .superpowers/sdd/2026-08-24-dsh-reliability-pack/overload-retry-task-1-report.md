@@ -34,3 +34,27 @@ Tooling note:
 Risks / follow-ups:
 - Task 1 intentionally does not wire these helpers into runtime request-error handling yet.
 - Message classification is regex-driven and intentionally narrow; future wiring work should keep the same strict allow-list and non-retryable exclusions.
+
+---
+
+Fix round 1: 2026-08-24
+
+Review items addressed:
+- Default `providers` narrowed to `['openrouter1']`, with tests proving other providers do not match unless explicitly allow-listed.
+- Default overload patterns tightened to explicit overload semantics only; generic `server_error`, `try again later`, and `temporarily unavailable` wording no longer matches by default.
+- Added fail-closed custom pattern validation. Invalid or too-short regex patterns now return `{ matched: false, reason: 'invalid-config' }` instead of throwing.
+- Added high-priority negative classification for auth, permission, quota/billing/credits, invalid request, and context/token-limit wording even when overload words appear in the same message.
+- Kept Task 1 scoped to pure normalization/classification/delay helpers only; request-error wiring remains deferred.
+
+Fix round 1 verification:
+- `node --test --experimental-strip-types tests/policy.test.ts`
+  - Passed: 11 tests, 0 failures.
+- `node --test --experimental-strip-types tests/**/*.test.ts`
+  - Passed: 11 tests, 0 failures.
+- `node /Users/kevin_zjy/.dsh/plugins/dsh-operating-context/node_modules/.pnpm/typescript@5.9.3/node_modules/typescript/bin/tsc --pretty false --project tsconfig.json`
+  - Passed.
+- `node ./node_modules/tsdown/dist/run.mjs && node ./scripts/normalize-lib.mjs`
+  - Passed twice consecutively with identical `lib/index.js` and `lib/index.d.ts` output sizes.
+
+Fix round 1 tooling note:
+- Verification again used a temporary symlink from `plugins/dsh-overload-retry/node_modules` to the existing read-only toolchain under `plugins/dsh-safe-continuation/node_modules`, then removed the symlink before commit.

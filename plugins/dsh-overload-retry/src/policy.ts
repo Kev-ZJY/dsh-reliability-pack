@@ -1,5 +1,20 @@
 import type { OverloadRetryConfig } from './config.ts';
 
+const MIN_PATTERN_LENGTH = 10;
+const EXCLUDED_MESSAGE_PATTERNS = [
+  /\bauth(?:entication)?\b/i,
+  /\bunauthorized\b/i,
+  /\bforbidden\b/i,
+  /\bquota\b/i,
+  /\bbilling\b/i,
+  /\binsufficient\s+credits?\b/i,
+  /\binvalid\b/i,
+  /\bbad\s+request\b/i,
+  /\bcontext\s+window\b/i,
+  /\btoo\s+many\s+tokens?\b/i,
+  /\btoken\s+limit\b/i,
+];
+
 export interface OverloadClassificationInput {
   provider: string;
   code: string;
@@ -27,9 +42,17 @@ export function classifyOverload(
     return { matched: false, reason: 'code-not-pi-ai-error' };
   }
 
-  const flags = config.messagePatternIgnoreCase ? 'i' : '';
-  for (const pattern of config.messagePatterns) {
-    if (new RegExp(pattern, flags).test(input.message)) {
+  if (EXCLUDED_MESSAGE_PATTERNS.some((pattern) => pattern.test(input.message))) {
+    return { matched: false, reason: 'message-excluded' };
+  }
+
+  const compiledPatterns = compilePatterns(config);
+  if (compiledPatterns === null) {
+    return { matched: false, reason: 'invalid-config' };
+  }
+
+  for (const pattern of compiledPatterns) {
+    if (pattern.test(input.message)) {
       return { matched: true, reason: 'matched-message-pattern' };
     }
   }
@@ -50,4 +73,23 @@ export function retryDelay(
   const jitteredDelay = baseDelay * jitterScale;
 
   return Math.round(Math.min(config.maxDelayMs, Math.max(0, jitteredDelay)));
+}
+
+function compilePatterns(config: OverloadRetryConfig): RegExp[] | null {
+  const flags = config.messagePatternIgnoreCase ? 'i' : '';
+  const compiledPatterns: RegExp[] = [];
+
+  for (const pattern of config.messagePatterns) {
+    if (pattern.length < MIN_PATTERN_LENGTH) {
+      return null;
+    }
+
+    try {
+      compiledPatterns.push(new RegExp(pattern, flags));
+    } catch {
+      return null;
+    }
+  }
+
+  return compiledPatterns;
 }

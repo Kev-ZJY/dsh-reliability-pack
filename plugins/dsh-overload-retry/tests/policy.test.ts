@@ -12,17 +12,16 @@ import {
 function enabledConfig(overrides: Partial<OverloadRetryConfig> = {}): OverloadRetryConfig {
   return {
     enabled: true,
-    providers: ['openai-codex', 'openai-compatible'],
+    providers: ['openrouter1'],
     maxRetries: 3,
     initialDelayMs: 250,
     maxDelayMs: 2_000,
     jitterRatio: 0.2,
     messagePatternIgnoreCase: true,
     messagePatterns: [
-      '\\boverloaded\\b',
-      '\\bserver_error\\b',
-      '\\btemporarily unavailable\\b',
-      '\\btry again later\\b',
+      '\\btemporarily\\s+overloaded\\b',
+      '\\bupstream\\b[\\s\\S]{0,80}\\boverload(?:ed)?\\b',
+      '\\bservice\\b[\\s\\S]{0,80}\\b(?:overload(?:ed)?|capacity)\\b',
     ],
     ...overrides,
   };
@@ -30,9 +29,9 @@ function enabledConfig(overrides: Partial<OverloadRetryConfig> = {}): OverloadRe
 
 function input(overrides: Partial<OverloadClassificationInput> = {}): OverloadClassificationInput {
   return {
-    provider: 'openai-codex',
+    provider: 'openrouter1',
     code: 'PI_AI_ERROR',
-    message: 'Our servers are currently overloaded. Please try again later.',
+    message: 'The upstream service is temporarily overloaded. Please retry later.',
     ...overrides,
   };
 }
@@ -40,17 +39,16 @@ function input(overrides: Partial<OverloadClassificationInput> = {}): OverloadCl
 test('normalization keeps overload retry opt-in and fills defaults', () => {
   assert.deepEqual(normalizeOverloadRetryConfig({}), {
     enabled: false,
-    providers: [],
+    providers: ['openrouter1'],
     maxRetries: 0,
     initialDelayMs: 250,
     maxDelayMs: 4_000,
     jitterRatio: 0.2,
     messagePatternIgnoreCase: true,
     messagePatterns: [
-      '\\boverloaded\\b',
-      '\\bserver_error\\b',
-      '\\btemporarily unavailable\\b',
-      '\\btry again later\\b',
+      '\\btemporarily\\s+overloaded\\b',
+      '\\bupstream\\b[\\s\\S]{0,80}\\boverload(?:ed)?\\b',
+      '\\bservice\\b[\\s\\S]{0,80}\\b(?:overload(?:ed)?|capacity)\\b',
     ],
   });
 });
@@ -62,12 +60,22 @@ test('classifies only allow-listed provider PI_AI_ERROR overload wording as retr
   });
 });
 
-test('rejects provider mismatches and non PI_AI_ERROR codes', () => {
+test('defaults only allow openrouter1 and explicit allow-lists can widen matching', () => {
   assert.deepEqual(classifyOverload(enabledConfig(), input({ provider: 'OpenAI-Codex' })), {
     matched: false,
     reason: 'provider-not-allowed',
   });
 
+  assert.deepEqual(
+    classifyOverload(
+      enabledConfig({ providers: ['openrouter1', 'OpenAI-Codex'] }),
+      input({ provider: 'OpenAI-Codex' }),
+    ),
+    { matched: true, reason: 'matched-message-pattern' },
+  );
+});
+
+test('rejects non PI_AI_ERROR codes', () => {
   assert.deepEqual(classifyOverload(enabledConfig(), input({ code: 'SERVER' })), {
     matched: false,
     reason: 'code-not-pi-ai-error',
@@ -77,25 +85,62 @@ test('rejects provider mismatches and non PI_AI_ERROR codes', () => {
 test('does not retry broad PI_AI_ERROR families that are not transient overloads', () => {
   const config = enabledConfig();
 
+  const nonRetryableMessages: Array<{ message: string; reason: string }> = [
+    { message: 'Authentication failed for this request.', reason: 'message-excluded' },
+    { message: 'Quota exceeded for this workspace.', reason: 'message-excluded' },
+    { message: 'This model context window is too large.', reason: 'message-excluded' },
+    { message: 'Partial stream ended before completion.', reason: 'message-not-overload' },
+    { message: 'client_error: invalid request body', reason: 'message-excluded' },
+  ];
+
+  for (const { message, reason } of nonRetryableMessages) {
+    assert.deepEqual(
+      classifyOverload(config, input({ message })),
+      { matched: false, reason },
+      `message should stay non-retryable: ${message}`,
+    );
+  }
+});
+
+test('rejects generic server_error and retry-later wording without explicit overload semantics', () => {
+  const config = enabledConfig();
   const nonRetryableMessages = [
-    'Authentication failed for this request.',
-    'Quota exceeded for this workspace.',
-    'This model context window is too large.',
-    'Partial stream ended before completion.',
-    'client_error: invalid request body',
+    'server_error: please try again later.',
+    'temporarily unavailable, try again later.',
+    'service degraded, retry later.',
   ];
 
   for (const message of nonRetryableMessages) {
     assert.deepEqual(
       classifyOverload(config, input({ message })),
       { matched: false, reason: 'message-not-overload' },
-      `message should stay non-retryable: ${message}`,
+      `generic wording should not become retryable: ${message}`,
+    );
+  }
+});
+
+test('hard exclusions win even when overload wording is present', () => {
+  const config = enabledConfig();
+  const excludedMessages = [
+    'Authentication failed while the upstream service is temporarily overloaded.',
+    'Unauthorized request: service overload detected.',
+    'Forbidden by policy because upstream capacity is exhausted.',
+    'Insufficient credits while service overload continues.',
+    'Bad request despite temporary overload upstream.',
+    'Context window exceeded while the service is overloaded.',
+  ];
+
+  for (const message of excludedMessages) {
+    assert.deepEqual(
+      classifyOverload(config, input({ message })),
+      { matched: false, reason: 'message-excluded' },
+      `exclusion should take priority: ${message}`,
     );
   }
 });
 
 test('matches overload wording with configured case handling only', () => {
-  const message = 'SERVER_ERROR: OUR SERVERS ARE CURRENTLY OVERLOADED. TRY AGAIN LATER.';
+  const message = 'UPSTREAM gateway is TEMPORARILY OVERLOADED for this route.';
 
   assert.deepEqual(classifyOverload(enabledConfig(), input({ message })), {
     matched: true,
@@ -108,6 +153,27 @@ test('matches overload wording with configured case handling only', () => {
       input({ message }),
     ),
     { matched: false, reason: 'message-not-overload' },
+  );
+});
+
+test('fails closed for invalid custom patterns without throwing', () => {
+  const invalidConfig = enabledConfig({
+    messagePatterns: ['(', '\\btemporarily\\s+overloaded\\b'],
+  });
+
+  assert.deepEqual(classifyOverload(invalidConfig, input()), {
+    matched: false,
+    reason: 'invalid-config',
+  });
+});
+
+test('fails closed for custom patterns that are too short to be meaningful', () => {
+  assert.deepEqual(
+    classifyOverload(
+      enabledConfig({ messagePatterns: ['overload', 'ok'] }),
+      input(),
+    ),
+    { matched: false, reason: 'invalid-config' },
   );
 });
 

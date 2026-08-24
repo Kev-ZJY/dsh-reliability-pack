@@ -22,17 +22,16 @@ export interface OverloadRetryConfigInput {
 
 export const DEFAULT_OVERLOAD_RETRY_CONFIG: OverloadRetryConfig = {
   enabled: false,
-  providers: [],
+  providers: ['openrouter1'],
   maxRetries: 0,
   initialDelayMs: 250,
   maxDelayMs: 4_000,
   jitterRatio: 0.2,
   messagePatternIgnoreCase: true,
   messagePatterns: [
-    '\\boverloaded\\b',
-    '\\bserver_error\\b',
-    '\\btemporarily unavailable\\b',
-    '\\btry again later\\b',
+    '\\btemporarily\\s+overloaded\\b',
+    '\\bupstream\\b[\\s\\S]{0,80}\\boverload(?:ed)?\\b',
+    '\\bservice\\b[\\s\\S]{0,80}\\b(?:overload(?:ed)?|capacity)\\b',
   ],
 };
 

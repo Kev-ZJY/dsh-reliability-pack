@@ -1,9 +1,16 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "./src"
+    "rootDir": ".",
+    "typeRoots": [
+      "/Users/kevin_zjy/.dsh/plugins/dsh-operating-context/node_modules/@types"
+    ],
+    "types": [
+      "node"
+    ]
   },
   "include": [
-    "src/**/*.ts"
+    "src/**/*.ts",
+    "tests/**/*.test.ts"
   ]
 }

@@ -6,10 +6,16 @@ Date: 2026-08-24
 
 - `plugins/dsh-safe-continuation/package.json`
 - `plugins/dsh-safe-continuation/tsconfig.json`
+- `plugins/dsh-safe-continuation/tsdown.config.ts`
 - `plugins/dsh-safe-continuation/cordis.patch.yml`
 - `plugins/dsh-safe-continuation/src/index.ts`
 - `plugins/dsh-safe-continuation/src/runtime-types.ts`
 - `plugins/dsh-safe-continuation/tests/runtime-contract.test.ts`
+- `plugins/dsh-safe-continuation/scripts/normalize-lib.mjs`
+- `plugins/dsh-safe-continuation/lib/index.js`
+- `plugins/dsh-safe-continuation/lib/index.d.ts`
+- `plugins/dsh-safe-continuation/lib/runtime-types.js`
+- `plugins/dsh-safe-continuation/lib/runtime-types.d.ts`
 - `plugins/dsh-safe-continuation/README.md`
 - `plugins/dsh-safe-continuation/README.zh.md`
 
@@ -140,3 +146,61 @@ Still not fixed in this commit:
 - Fix round 1 ends in a known red state: the tightened contract test now fails against the current manifest because the prebuilt `lib` contract is not implemented yet.
 - Dependency installation did not complete in the current environment, so no fresh `typecheck` or `bundle` evidence exists.
 - The scaffold still intentionally stops at manifest/patch/loader/runtime-type contract. No continuation guard, handler, or token-meter behavioral integration is implemented in task 1.
+
+## Fix round 2 status
+
+Completed and preserved:
+
+- `package.json` now publishes `./lib/index.js` and `./lib/runtime-types.js`
+- declared minimal `devDependencies`: `typescript ^5.9.2`, `tsdown ^0.22.2`, `@types/node ^22.19.0`
+- added non-install-time `bundle` script only
+- `tsconfig.json` now includes both `src/**/*.ts` and `tests/**/*.test.ts`
+- added `tsdown.config.ts` to build `src/index.ts` and `src/runtime-types.ts` into `lib`
+- generated and retained committed publishable artifacts:
+  - `lib/index.js`
+  - `lib/index.d.ts`
+  - `lib/runtime-types.js`
+  - `lib/runtime-types.d.ts`
+- runtime contract test now checks manifest `lib` exports, built-file existence/importability, and `request/context` validator positive/negative cases
+
+Fix round 2 local-tool verification:
+
+```text
+$ /Users/kevin_zjy/.dsh/plugins/dsh-operating-context/node_modules/.bin/tsc --pretty false --project /Users/kevin_zjy/.dsh/reliability-pack/plugins/dsh-safe-continuation/tsconfig.json
+[exit 0]
+
+$ /Users/kevin_zjy/.dsh/plugins/dsh-operating-context/node_modules/.bin/tsdown
+ℹ tsdown v0.22.14 powered by rolldown v1.2.4
+ℹ config file: /Users/kevin_zjy/.dsh/reliability-pack/plugins/dsh-safe-continuation/tsdown.config.ts
+ℹ entry: ./src/index.ts, ./src/runtime-types.ts
+ℹ tsconfig: tsconfig.json
+ℹ Build start
+ℹ lib/runtime-types.mjs    1.09 kB │ gzip: 0.33 kB
+ℹ lib/index.mjs            0.09 kB │ gzip: 0.10 kB
+ℹ lib/runtime-types.d.mts  1.21 kB │ gzip: 0.36 kB
+ℹ lib/index.d.mts          0.50 kB │ gzip: 0.26 kB
+ℹ 4 files, total: 2.89 kB
+✔ Build complete
+
+$ node /Users/kevin_zjy/.dsh/reliability-pack/plugins/dsh-safe-continuation/scripts/normalize-lib.mjs
+[exit 0 on first successful normalization; a repeated invocation later returned ENOENT because the .mjs/.d.mts files had already been renamed]
+
+$ ls -la /Users/kevin_zjy/.dsh/reliability-pack/plugins/dsh-safe-continuation/lib
+index.d.ts
+index.js
+runtime-types.d.ts
+runtime-types.js
+
+$ node --test --experimental-strip-types tests/**/*.test.ts
+✔ dsh-safe-continuation loader contract is wired through the package manifest
+✔ dsh-safe-continuation package manifest forbids install-time build scripts
+✔ dsh-safe-continuation runtime adapter accepts the inspected event shape
+✔ dsh-safe-continuation request/context validator rejects invalid payloads
+ℹ pass 4
+ℹ fail 0
+```
+
+Remaining limitations at fix round 2 close:
+
+- local package `npm install` was still not relied on; verification used the explicitly provided existing toolchain under `/Users/kevin_zjy/.dsh/plugins/dsh-operating-context/node_modules/.bin/`
+- `bundle` script is declared for ordinary environments, but this round's proof used the absolute-path local `tsdown` plus the checked-in normalization step

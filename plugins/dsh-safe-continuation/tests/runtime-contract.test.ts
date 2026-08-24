@@ -1,5 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { access } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
+
+const builtLoaderPath = new URL('../lib/index.js', import.meta.url);
+const builtRuntimeTypesPath = new URL('../lib/runtime-types.js', import.meta.url);
 
 test('dsh-safe-continuation loader contract is wired through the package manifest', async () => {
   const mod = await import('../src/index.ts');
@@ -18,6 +23,15 @@ test('dsh-safe-continuation loader contract is wired through the package manifes
   assert.equal(manifest.exports?.['./runtime-types'], './lib/runtime-types.js');
   assert.equal(manifest.dsh?.bundle?.patch, './cordis.patch.yml');
   assert.deepEqual(manifest.files, ['lib', 'cordis.patch.yml', 'README.md', 'README.zh.md']);
+
+  await access(builtLoaderPath);
+  await access(builtRuntimeTypesPath);
+
+  const builtLoader = await import(pathToFileURL(builtLoaderPath.pathname).href);
+  const builtRuntimeTypes = await import(pathToFileURL(builtRuntimeTypesPath.pathname).href);
+
+  assert.equal(typeof builtLoader.load, 'function');
+  assert.equal(typeof builtRuntimeTypes.isSafeContinuationRequestContext, 'function');
 });
 
 test('dsh-safe-continuation package manifest forbids install-time build scripts', async () => {

@@ -1,0 +1,13 @@
+# Task 1 mounts the package scaffold only. The verified tools/post-execute
+# listener is added in Task 2; keep the bundle opt-in until that seam is wired.
+
+- insert:
+    - id: path-diagnostics
+      name: dsh-path-diagnostics
+      config:
+        enabled: false
+        readOnly: true
+        maxDepth: 4
+        maxCandidates: 8
+        maxSearchEntries: 2000
+        suggestOnlyWhenUnique: true

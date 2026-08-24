@@ -1,4 +1,3 @@
-import type { SafeContinuationEnvelope } from './runtime-types.ts';
 export {
   DEFAULT_CONTINUATION_CONFIG,
   normalizeContinuationConfig,
@@ -10,16 +9,16 @@ export {
   type ContinuationDecision,
   type ContinuationObservation,
 } from './guards.ts';
+export {
+  installSafeContinuation,
+  type ContinuationRuntimeDiagnostic,
+  type SafeContinuationContext,
+  type SafeContinuationRuntimeOptions,
+} from './continuation.ts';
+import type { SafeContinuationContext } from './continuation.ts';
 
 export interface SafeContinuationConfig {
   enabled?: boolean;
-}
-
-export interface SafeContinuationContext {
-  on?: (
-    eventName: 'session/event',
-    listener: (session: SafeContinuationEnvelope['session'], event: SafeContinuationEnvelope['event']) => void,
-  ) => unknown;
 }
 
 export function load(_ctx: SafeContinuationContext): void {}

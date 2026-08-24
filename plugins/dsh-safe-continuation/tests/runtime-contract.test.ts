@@ -53,7 +53,6 @@ test('published declarations reference only existing package-local files', async
   );
 
   assert.doesNotMatch(declaration, /\.(?:mjs|mts)(?:['"]|\b)/);
-  assert.ok(relativeTargets.length > 0, 'expected at least one relative declaration import');
 
   for (const target of relativeTargets) {
     await access(new URL(target, declarationPath));

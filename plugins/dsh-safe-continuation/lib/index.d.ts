@@ -1,4 +1,3 @@
-import { SafeContinuationEnvelope } from "./runtime-types.js";
 //#region src/config.d.ts
 interface ContinuationConfig {
   enabled: boolean;
@@ -36,13 +35,53 @@ interface ContinuationDecision {
 }
 declare function decideContinuation(config: ContinuationConfig, observation: ContinuationObservation): ContinuationDecision;
 //#endregion
+//#region src/continuation.d.ts
+type Disposable = () => void;
+interface SessionEventLike {
+  readonly type: string;
+  readonly data: Record<string, unknown>;
+}
+interface InboxLike {
+  readonly nextTurn?: readonly unknown[];
+  readonly nextStep?: readonly unknown[];
+}
+interface SessionLike {
+  readonly id: string;
+  readonly header?: {
+    readonly id: string;
+  };
+  readonly events?: readonly SessionEventLike[];
+}
+interface AgentLike {
+  readonly id: string;
+  readonly session: SessionLike;
+  readonly inbox?: InboxLike;
+  steer(message: unknown): void;
+}
+interface TurnStoppingPayload {
+  readonly agent: AgentLike;
+  readonly turn: number;
+  readonly signal: AbortSignal | Pick<AbortSignal, 'aborted'>;
+}
+interface ContinuationRuntimeDiagnostic {
+  readonly sessionId: string;
+  readonly turnKey: string;
+  readonly step: 'skip' | 'steer';
+  readonly reason: ContinuationDecision['reason'];
+  readonly attempt: number;
+}
+interface SafeContinuationRuntimeOptions extends ContinuationConfigInput {
+  readonly onDiagnostic?: (diagnostic: ContinuationRuntimeDiagnostic) => void;
+}
+interface SafeContinuationContext {
+  on?(eventName: 'agent/turn-stopping', listener: (payload: TurnStoppingPayload) => void | Promise<void>): unknown;
+}
+declare function installSafeContinuation(ctx: SafeContinuationContext, options?: SafeContinuationRuntimeOptions): Disposable;
+//#endregion
 //#region src/index.d.ts
 interface SafeContinuationConfig {
   enabled?: boolean;
 }
-interface SafeContinuationContext {
-  on?: (eventName: 'session/event', listener: (session: SafeContinuationEnvelope['session'], event: SafeContinuationEnvelope['event']) => void) => unknown;
-}
 declare function load(_ctx: SafeContinuationContext): void;
 //#endregion
-export { type ContinuationConfig, type ContinuationConfigInput, type ContinuationDecision, type ContinuationObservation, DEFAULT_CONTINUATION_CONFIG, SafeContinuationConfig, SafeContinuationContext, decideContinuation, load as default, load, normalizeContinuationConfig };
+export { type ContinuationConfig, type ContinuationConfigInput, type ContinuationDecision, type ContinuationObservation, type ContinuationRuntimeDiagnostic, DEFAULT_CONTINUATION_CONFIG, SafeContinuationConfig, type SafeContinuationContext, type SafeContinuationRuntimeOptions, decideContinuation, load as default, load, installSafeContinuation, normalizeContinuationConfig };

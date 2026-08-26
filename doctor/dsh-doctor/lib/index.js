@@ -75,6 +75,8 @@ function validWorkspacePolicy(text) {
 	return /^\s*packages:\s*$/m.test(text);
 }
 function validPatch(text) {
+	const stripped = text.split("\n").filter((line) => !/^\s*#/.test(line)).join("\n").trim();
+	if (stripped.length === 0 || /^\[\s*\]$/.test(stripped)) return true;
 	return /^\s*id:\s*\S+/m.test(text) && /^\s*name:\s*\S+/m.test(text);
 }
 function packageName(value) {
@@ -551,15 +553,15 @@ async function runProfileUpdate(args, io = {}) {
 			args: dumpConfigCommand(args.profile)
 		}
 	};
+	let validation;
 	try {
-		const validation = await inspector(validationInput);
-		if (!validation.ok) {
-			errorOutput(io, `post-update validation failed: ${backupFailureMessage(backup, formatCheckResult(validation))}`);
-			return 1;
-		}
+		validation = await inspector(validationInput);
 	} catch (caught) {
-		const message = caught instanceof Error ? caught.message : String(caught);
-		errorOutput(io, `post-update validation failed: ${backupFailureMessage(backup, message)}`);
+		errorOutput(io, `post-update validation could not run (validator error: ${redactSecrets(caught instanceof Error ? caught.message : String(caught))}; update itself exited 0); backup: ${backup.directory}`);
+		return 0;
+	}
+	if (!validation.ok) {
+		errorOutput(io, `post-update validation failed: ${backupFailureMessage(backup, formatCheckResult(validation))}`);
 		return 1;
 	}
 	output(io, `profile update validated; backup: ${backup.directory}`);

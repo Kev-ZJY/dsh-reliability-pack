@@ -1,3 +1,4 @@
+import z from '@deepseek-ai/schemastery';
 import { basename, dirname } from 'node:path';
 import {
   isWithinWorkspace,
@@ -46,6 +47,15 @@ export const DEFAULT_PATH_DIAGNOSTIC_CONFIG: PathDiagnosticConfig = {
   maxSearchEntries: 2000,
   suggestOnlyWhenUnique: true,
 };
+
+export const Config: z<PathDiagnosticConfig> = z.object({
+  enabled: z.boolean().default(DEFAULT_PATH_DIAGNOSTIC_CONFIG.enabled),
+  readOnly: z.const(true).default(true),
+  maxDepth: z.natural().default(DEFAULT_PATH_DIAGNOSTIC_CONFIG.maxDepth),
+  maxCandidates: z.natural().default(DEFAULT_PATH_DIAGNOSTIC_CONFIG.maxCandidates),
+  maxSearchEntries: z.natural().default(DEFAULT_PATH_DIAGNOSTIC_CONFIG.maxSearchEntries),
+  suggestOnlyWhenUnique: z.const(true).default(true),
+});
 
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 

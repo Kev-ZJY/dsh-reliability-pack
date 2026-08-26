@@ -1,3 +1,4 @@
+import z from "@deepseek-ai/schemastery";
 //#region src/config.d.ts
 interface OverloadRetryConfig {
   enabled: boolean;
@@ -21,6 +22,7 @@ interface OverloadRetryConfigInput {
 }
 declare const DEFAULT_OVERLOAD_RETRY_CONFIG: OverloadRetryConfig;
 declare function normalizeOverloadRetryConfig(input?: OverloadRetryConfigInput): OverloadRetryConfig;
+declare const Config: z<OverloadRetryConfig>;
 //#endregion
 //#region src/retry-handler.d.ts
 type Disposable = () => void;
@@ -64,7 +66,7 @@ interface OverloadRetryDiagnostic {
   readonly turn: number;
   readonly step: number;
   readonly provider: string;
-  readonly reason: 'disabled' | 'provider-not-allowed' | 'code-not-pi-ai-error' | 'message-excluded' | 'invalid-config' | 'message-not-overload' | 'max-retries-exhausted' | 'committed-tool-activity' | 'aborted' | 'disposed' | 'retry';
+  readonly reason: 'disabled' | 'provider-not-allowed' | 'code-not-pi-ai-error' | 'message-excluded' | 'invalid-config' | 'message-not-overload' | 'max-retries-exhausted' | 'committed-tool-activity' | 'aborted' | 'disposed' | 'retry' | 'listener-error';
   readonly retry: number;
   readonly delayMs?: number;
   readonly failure: {
@@ -109,4 +111,4 @@ declare function retryDelay(config: OverloadRetryConfig, retryIndex: number, ran
 declare const name = "dsh-overload-retry";
 interface OverloadRetryPluginConfig extends OverloadRetryRuntimeOptions {}
 //#endregion
-export { DEFAULT_OVERLOAD_RETRY_CONFIG, type OverloadClassification, type OverloadClassificationInput, type OverloadRetryConfig, type OverloadRetryConfigInput, type OverloadRetryDiagnostic, OverloadRetryPluginConfig, type OverloadRetryRequestErrorPayload, type OverloadRetryRuntimeContext, type OverloadRetryRuntimeOptions, apply, apply as default, classifyOverload, installOverloadRetry, name, normalizeOverloadRetryConfig, retryDelay };
+export { Config, DEFAULT_OVERLOAD_RETRY_CONFIG, type OverloadClassification, type OverloadClassificationInput, type OverloadRetryConfig, type OverloadRetryConfigInput, type OverloadRetryDiagnostic, OverloadRetryPluginConfig, type OverloadRetryRequestErrorPayload, type OverloadRetryRuntimeContext, type OverloadRetryRuntimeOptions, apply, apply as default, classifyOverload, installOverloadRetry, name, normalizeOverloadRetryConfig, retryDelay };

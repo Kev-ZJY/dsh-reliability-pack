@@ -1,3 +1,4 @@
+import z from "@deepseek-ai/schemastery";
 //#region src/config.ts
 const DEFAULT_OVERLOAD_RETRY_CONFIG = {
 	enabled: false,
@@ -25,9 +26,18 @@ function normalizeOverloadRetryConfig(input = {}) {
 		messagePatterns: [...input.messagePatterns ?? DEFAULT_OVERLOAD_RETRY_CONFIG.messagePatterns]
 	};
 }
+const Config = z.object({
+	enabled: z.boolean().default(DEFAULT_OVERLOAD_RETRY_CONFIG.enabled),
+	providers: z.array(z.string()).default(DEFAULT_OVERLOAD_RETRY_CONFIG.providers),
+	maxRetries: z.natural().default(DEFAULT_OVERLOAD_RETRY_CONFIG.maxRetries),
+	initialDelayMs: z.natural().default(DEFAULT_OVERLOAD_RETRY_CONFIG.initialDelayMs),
+	maxDelayMs: z.natural().default(DEFAULT_OVERLOAD_RETRY_CONFIG.maxDelayMs),
+	jitterRatio: z.number().min(0).max(1).default(DEFAULT_OVERLOAD_RETRY_CONFIG.jitterRatio),
+	messagePatternIgnoreCase: z.boolean().default(DEFAULT_OVERLOAD_RETRY_CONFIG.messagePatternIgnoreCase),
+	messagePatterns: z.array(z.string()).default(DEFAULT_OVERLOAD_RETRY_CONFIG.messagePatterns)
+});
 //#endregion
 //#region src/policy.ts
-const MIN_PATTERN_LENGTH = 10;
 const EXCLUDED_MESSAGE_PATTERNS = [
 	/\bauth(?:entication)?\b/i,
 	/\bunauthorized\b/i,
@@ -35,12 +45,13 @@ const EXCLUDED_MESSAGE_PATTERNS = [
 	/\bquota\b/i,
 	/\bbilling\b/i,
 	/\binsufficient\s+credits?\b/i,
-	/\binvalid\b/i,
+	/\binvalid\s+(?:api\s+key|request|token|credentials?)\b/i,
 	/\bbad\s+request\b/i,
 	/\bcontext\s+window\b/i,
 	/\btoo\s+many\s+tokens?\b/i,
 	/\btoken\s+limit\b/i
 ];
+const compiledPatternsCache = /* @__PURE__ */ new WeakMap();
 function classifyOverload(config, input) {
 	if (!config.enabled) return {
 		matched: false,
@@ -77,21 +88,23 @@ function retryDelay(config, retryIndex, randomValue) {
 	return Math.round(Math.min(config.maxDelayMs, Math.max(0, jitteredDelay)));
 }
 function compilePatterns(config) {
+	const cached = compiledPatternsCache.get(config);
+	if (cached !== void 0) return cached;
 	const flags = config.messagePatternIgnoreCase ? "i" : "";
 	const compiledPatterns = [];
-	for (const pattern of config.messagePatterns) {
-		if (pattern.length < MIN_PATTERN_LENGTH) return null;
-		try {
-			compiledPatterns.push(new RegExp(pattern, flags));
-		} catch {
-			return null;
-		}
+	for (const pattern of config.messagePatterns) try {
+		compiledPatterns.push(new RegExp(pattern, flags));
+	} catch {
+		return null;
 	}
+	compiledPatternsCache.set(config, compiledPatterns);
 	return compiledPatterns;
 }
 //#endregion
 //#region src/retry-handler.ts
 const DIAGNOSTIC_EVENT_TYPE = "dsh-overload-retry/diagnostic";
+const RETRY_SCHEDULED_ACTION = "retry-scheduled";
+const RETRY_STARTED_ACTION = "retry-started";
 function isRecord(value) {
 	return typeof value === "object" && value !== null;
 }
@@ -133,7 +146,7 @@ function countDurableRetries(events, payload) {
 	for (const event of events) {
 		if (event.type !== DIAGNOSTIC_EVENT_TYPE) continue;
 		if (stringField(event.data, "plugin") !== "dsh-overload-retry") continue;
-		if (stringField(event.data, "action") !== "retry-scheduled") continue;
+		if (stringField(event.data, "action") !== "retry-started") continue;
 		if (numberField(event.data, "turn") !== payload.turn) continue;
 		if (numberField(event.data, "step") !== payload.step) continue;
 		if (stringField(event.data, "provider") !== payload.provider) continue;
@@ -163,14 +176,14 @@ function diagnosticFor(payload, reason, retry, delayMs) {
 		}
 	};
 }
-function appendDurableDiagnostic(agent, payload, retry) {
+function appendDurableDiagnostic(agent, payload, retry, action) {
 	if (typeof agent.session.append !== "function") return false;
 	const event = {
 		plugin: "dsh-overload-retry",
 		turn: payload.turn,
 		step: payload.step,
 		provider: payload.provider,
-		action: "retry-scheduled",
+		action,
 		retry
 	};
 	agent.session.append(DIAGNOSTIC_EVENT_TYPE, event);
@@ -192,50 +205,57 @@ function createRuntime(ctx, options = {}, internals = {}) {
 		return tracked;
 	}
 	async function listener(payload, next) {
-		if (disposed || lifetime.signal.aborted) {
-			options.onDiagnostic?.(diagnosticFor(payload, "disposed", 0));
-			return;
-		}
-		if (payload.signal.aborted) {
-			options.onDiagnostic?.(diagnosticFor(payload, "aborted", 0));
-			return;
-		}
-		const events = payload.agent.session.events ?? [];
-		if (hasCommittedToolActivity(events, payload)) {
-			options.onDiagnostic?.(diagnosticFor(payload, "committed-tool-activity", 0));
+		try {
+			if (disposed || lifetime.signal.aborted) {
+				options.onDiagnostic?.(diagnosticFor(payload, "disposed", 0));
+				return;
+			}
+			if (payload.signal.aborted) {
+				options.onDiagnostic?.(diagnosticFor(payload, "aborted", 0));
+				return;
+			}
+			const events = payload.agent.session.events ?? [];
+			if (hasCommittedToolActivity(events, payload)) {
+				options.onDiagnostic?.(diagnosticFor(payload, "committed-tool-activity", 0));
+				return next();
+			}
+			const classification = classifyOverload(config, {
+				provider: payload.provider,
+				code: payload.failure.code,
+				message: payload.failure.message
+			});
+			if (!classification.matched) {
+				options.onDiagnostic?.(diagnosticFor(payload, classification.reason, 0));
+				return next();
+			}
+			const key = attemptKey(sessionIdOf(payload.agent), payload);
+			const durableAttempts = countDurableRetries(events, payload);
+			const previousAttempts = Math.max(durableAttempts, attempts.get(key) ?? 0);
+			if (previousAttempts >= config.maxRetries) {
+				options.onDiagnostic?.(diagnosticFor(payload, "max-retries-exhausted", previousAttempts));
+				return next();
+			}
+			const retry = previousAttempts + 1;
+			const delayMs = retryDelay(config, retry - 1, random());
+			appendDurableDiagnostic(payload.agent, payload, retry, RETRY_SCHEDULED_ACTION);
+			const fused = AbortSignal.any([payload.signal, lifetime.signal]);
+			const diagnostic = diagnosticFor(payload, "retry", retry, delayMs);
+			options.onDiagnostic?.(diagnostic);
+			if (!await wait(delayMs, fused)) {
+				options.onDiagnostic?.(diagnosticFor(payload, "aborted", retry));
+				return;
+			}
+			if (disposed || lifetime.signal.aborted || payload.signal.aborted) {
+				options.onDiagnostic?.(diagnosticFor(payload, disposed ? "disposed" : "aborted", retry));
+				return;
+			}
+			appendDurableDiagnostic(payload.agent, payload, retry, RETRY_STARTED_ACTION);
+			attempts.set(key, retry);
+			return { kind: "retry" };
+		} catch (error) {
+			options.onDiagnostic?.(diagnosticFor(payload, "listener-error", 0));
 			return next();
 		}
-		const classification = classifyOverload(config, {
-			provider: payload.provider,
-			code: payload.failure.code,
-			message: payload.failure.message
-		});
-		if (!classification.matched) {
-			options.onDiagnostic?.(diagnosticFor(payload, classification.reason, 0));
-			return next();
-		}
-		const key = attemptKey(sessionIdOf(payload.agent), payload);
-		const durableAttempts = countDurableRetries(events, payload);
-		const previousAttempts = durableAttempts > 0 ? durableAttempts : attempts.get(key) ?? 0;
-		if (previousAttempts >= config.maxRetries) {
-			options.onDiagnostic?.(diagnosticFor(payload, "max-retries-exhausted", previousAttempts));
-			return next();
-		}
-		const retry = previousAttempts + 1;
-		const delayMs = retryDelay(config, retry - 1, random());
-		if (!appendDurableDiagnostic(payload.agent, payload, retry)) attempts.set(key, retry);
-		const fused = AbortSignal.any([payload.signal, lifetime.signal]);
-		const diagnostic = diagnosticFor(payload, "retry", retry, delayMs);
-		options.onDiagnostic?.(diagnostic);
-		if (!await wait(delayMs, fused)) {
-			options.onDiagnostic?.(diagnosticFor(payload, "aborted", retry));
-			return;
-		}
-		if (disposed || lifetime.signal.aborted || payload.signal.aborted) {
-			options.onDiagnostic?.(diagnosticFor(payload, disposed ? "disposed" : "aborted", retry));
-			return;
-		}
-		return { kind: "retry" };
 	}
 	const unsubscribe = toDisposable(ctx.on?.("agent/request-error", (payload, next) => {
 		if (disposed || lifetime.signal.aborted) return Promise.resolve(void 0);
@@ -270,4 +290,4 @@ function apply(ctx, config = {}) {
 const name = "dsh-overload-retry";
 var src_default = apply;
 //#endregion
-export { DEFAULT_OVERLOAD_RETRY_CONFIG, apply, classifyOverload, src_default as default, installOverloadRetry, name, normalizeOverloadRetryConfig, retryDelay };
+export { Config, DEFAULT_OVERLOAD_RETRY_CONFIG, apply, classifyOverload, src_default as default, installOverloadRetry, name, normalizeOverloadRetryConfig, retryDelay };

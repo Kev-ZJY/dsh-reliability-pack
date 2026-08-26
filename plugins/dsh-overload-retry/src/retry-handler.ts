@@ -62,7 +62,8 @@ export interface OverloadRetryDiagnostic {
     | 'committed-tool-activity'
     | 'aborted'
     | 'disposed'
-    | 'retry';
+    | 'retry'
+    | 'listener-error';
   readonly retry: number;
   readonly delayMs?: number;
   readonly failure: {
@@ -103,11 +104,14 @@ interface RetryDiagnosticEventData extends Record<string, unknown> {
   readonly turn: number;
   readonly step: number;
   readonly provider: string;
-  readonly action: 'retry-scheduled';
+  readonly action: typeof RETRY_SCHEDULED_ACTION | typeof RETRY_STARTED_ACTION;
   readonly retry: number;
 }
 
 const DIAGNOSTIC_EVENT_TYPE = 'dsh-overload-retry/diagnostic';
+
+const RETRY_SCHEDULED_ACTION = 'retry-scheduled' as const;
+const RETRY_STARTED_ACTION = 'retry-started' as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -159,7 +163,7 @@ function countDurableRetries(events: readonly SessionEventLike[], payload: Overl
   for (const event of events) {
     if (event.type !== DIAGNOSTIC_EVENT_TYPE) continue;
     if (stringField(event.data, 'plugin') !== 'dsh-overload-retry') continue;
-    if (stringField(event.data, 'action') !== 'retry-scheduled') continue;
+    if (stringField(event.data, 'action') !== 'retry-started') continue;
     if (numberField(event.data, 'turn') !== payload.turn) continue;
     if (numberField(event.data, 'step') !== payload.step) continue;
     if (stringField(event.data, 'provider') !== payload.provider) continue;
@@ -200,14 +204,14 @@ function diagnosticFor(
   };
 }
 
-function appendDurableDiagnostic(agent: AgentLike, payload: OverloadRetryRequestErrorPayload, retry: number): boolean {
+function appendDurableDiagnostic(agent: AgentLike, payload: OverloadRetryRequestErrorPayload, retry: number, action: typeof RETRY_SCHEDULED_ACTION | typeof RETRY_STARTED_ACTION): boolean {
   if (typeof agent.session.append !== 'function') return false;
   const event: RetryDiagnosticEventData = {
     plugin: 'dsh-overload-retry',
     turn: payload.turn,
     step: payload.step,
     provider: payload.provider,
-    action: 'retry-scheduled',
+    action,
     retry,
   };
   agent.session.append(DIAGNOSTIC_EVENT_TYPE, event);
@@ -239,60 +243,64 @@ function createRuntime(
     payload: OverloadRetryRequestErrorPayload,
     next: () => Promise<RequestErrorAction>,
   ): Promise<RequestErrorAction> {
-    if (disposed || lifetime.signal.aborted) {
-      options.onDiagnostic?.(diagnosticFor(payload, 'disposed', 0));
-      return undefined;
-    }
+    try {
+      if (disposed || lifetime.signal.aborted) {
+        options.onDiagnostic?.(diagnosticFor(payload, 'disposed', 0));
+        return undefined;
+      }
 
-    if (payload.signal.aborted) {
-      options.onDiagnostic?.(diagnosticFor(payload, 'aborted', 0));
-      return undefined;
-    }
+      if (payload.signal.aborted) {
+        options.onDiagnostic?.(diagnosticFor(payload, 'aborted', 0));
+        return undefined;
+      }
 
-    const events = payload.agent.session.events ?? [];
-    if (hasCommittedToolActivity(events, payload)) {
-      options.onDiagnostic?.(diagnosticFor(payload, 'committed-tool-activity', 0));
-      return next();
-    }
+      const events = payload.agent.session.events ?? [];
+      if (hasCommittedToolActivity(events, payload)) {
+        options.onDiagnostic?.(diagnosticFor(payload, 'committed-tool-activity', 0));
+        return next();
+      }
 
-    const classification = classifyOverload(config, {
-      provider: payload.provider,
-      code: payload.failure.code,
-      message: payload.failure.message,
-    });
-    if (!classification.matched) {
-      options.onDiagnostic?.(diagnosticFor(payload, classification.reason, 0));
-      return next();
-    }
+      const classification = classifyOverload(config, {
+        provider: payload.provider,
+        code: payload.failure.code,
+        message: payload.failure.message,
+      });
+      if (!classification.matched) {
+        options.onDiagnostic?.(diagnosticFor(payload, classification.reason, 0));
+        return next();
+      }
 
-    const sessionId = sessionIdOf(payload.agent);
-    const key = attemptKey(sessionId, payload);
-    const durableAttempts = countDurableRetries(events, payload);
-    const previousAttempts = durableAttempts > 0 ? durableAttempts : (attempts.get(key) ?? 0);
-    if (previousAttempts >= config.maxRetries) {
-      options.onDiagnostic?.(diagnosticFor(payload, 'max-retries-exhausted', previousAttempts));
-      return next();
-    }
+      const sessionId = sessionIdOf(payload.agent);
+      const key = attemptKey(sessionId, payload);
+      const durableAttempts = countDurableRetries(events, payload);
+      const previousAttempts = Math.max(durableAttempts, attempts.get(key) ?? 0);
+      if (previousAttempts >= config.maxRetries) {
+        options.onDiagnostic?.(diagnosticFor(payload, 'max-retries-exhausted', previousAttempts));
+        return next();
+      }
 
-    const retry = previousAttempts + 1;
-    const delayMs = retryDelay(config, retry - 1, random());
-    const persisted = appendDurableDiagnostic(payload.agent, payload, retry);
-    if (!persisted) {
+      const retry = previousAttempts + 1;
+      const delayMs = retryDelay(config, retry - 1, random());
+      appendDurableDiagnostic(payload.agent, payload, retry, RETRY_SCHEDULED_ACTION);
+
+      const fused = AbortSignal.any([payload.signal, lifetime.signal]);
+      const diagnostic = diagnosticFor(payload, 'retry', retry, delayMs);
+      options.onDiagnostic?.(diagnostic);
+      if (!await wait(delayMs, fused)) {
+        options.onDiagnostic?.(diagnosticFor(payload, 'aborted', retry));
+        return undefined;
+      }
+      if (disposed || lifetime.signal.aborted || payload.signal.aborted) {
+        options.onDiagnostic?.(diagnosticFor(payload, disposed ? 'disposed' : 'aborted', retry));
+        return undefined;
+      }
+      appendDurableDiagnostic(payload.agent, payload, retry, RETRY_STARTED_ACTION);
       attempts.set(key, retry);
+      return { kind: 'retry' };
+    } catch (error) {
+      options.onDiagnostic?.(diagnosticFor(payload, 'listener-error', 0));
+      return next();
     }
-
-    const fused = AbortSignal.any([payload.signal, lifetime.signal]);
-    const diagnostic = diagnosticFor(payload, 'retry', retry, delayMs);
-    options.onDiagnostic?.(diagnostic);
-    if (!await wait(delayMs, fused)) {
-      options.onDiagnostic?.(diagnosticFor(payload, 'aborted', retry));
-      return undefined;
-    }
-    if (disposed || lifetime.signal.aborted || payload.signal.aborted) {
-      options.onDiagnostic?.(diagnosticFor(payload, disposed ? 'disposed' : 'aborted', retry));
-      return undefined;
-    }
-    return { kind: 'retry' };
   }
 
   const unsubscribe = toDisposable(ctx.on?.('agent/request-error', (payload, next) => {

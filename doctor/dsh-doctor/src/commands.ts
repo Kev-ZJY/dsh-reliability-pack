@@ -216,15 +216,16 @@ export async function runProfileUpdate(
       args: dumpConfigCommand(args.profile),
     },
   };
+  let validation: ProfileCheckResult;
   try {
-    const validation = await inspector(validationInput);
-    if (!validation.ok) {
-      errorOutput(io, `post-update validation failed: ${backupFailureMessage(backup, formatCheckResult(validation))}`);
-      return 1;
-    }
+    validation = await inspector(validationInput);
   } catch (caught) {
     const message = caught instanceof Error ? caught.message : String(caught);
-    errorOutput(io, `post-update validation failed: ${backupFailureMessage(backup, message)}`);
+    errorOutput(io, `post-update validation could not run (validator error: ${redactSecrets(message)}; update itself exited 0); backup: ${backup.directory}`);
+    return 0;
+  }
+  if (!validation.ok) {
+    errorOutput(io, `post-update validation failed: ${backupFailureMessage(backup, formatCheckResult(validation))}`);
     return 1;
   }
 

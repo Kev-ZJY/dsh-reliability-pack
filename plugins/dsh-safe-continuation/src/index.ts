@@ -1,6 +1,8 @@
 export {
   DEFAULT_CONTINUATION_CONFIG,
   normalizeContinuationConfig,
+  BUILTIN_DEFAULT_PROMPT,
+  Config,
   type ContinuationConfig,
   type ContinuationConfigInput,
 } from './config.ts';
@@ -16,8 +18,7 @@ export {
   type SafeContinuationRuntimeOptions,
 } from './continuation.ts';
 import { installSafeContinuation } from './continuation.ts';
-import type { SafeContinuationContext } from './continuation.ts';
-import type { SafeContinuationRuntimeOptions } from './continuation.ts';
+import type { SafeContinuationContext, SafeContinuationRuntimeOptions } from './continuation.ts';
 
 export const name = 'dsh-safe-continuation';
 

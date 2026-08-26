@@ -203,6 +203,8 @@ export function installSafeContinuation(
   return () => {
     if (disposed) return;
     disposed = true;
+    sessionCounts.clear();
+    turnCounts.clear();
     unsubscribe();
   };
 }

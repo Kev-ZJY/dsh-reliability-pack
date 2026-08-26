@@ -7,6 +7,7 @@ import {
   type ContinuationConfig,
   type ContinuationDecision,
   type ContinuationObservation,
+  BUILTIN_DEFAULT_PROMPT,
 } from '../src/index.ts';
 
 function enabledConfig(overrides: Partial<ContinuationConfig> = {}): ContinuationConfig {
@@ -161,4 +162,25 @@ test('treats the prompt as opaque text that does not influence decisions', () =>
     'baseline decision should reflect the guard outcome',
   );
   assert.deepEqual(hostilePrompt, ordinaryPrompt);
+});
+
+test('normalizes empty prompt to built-in default when enabled is true', () => {
+  const normalized = normalizeContinuationConfig({ enabled: true, prompt: '' });
+  assert.equal(normalized.prompt, BUILTIN_DEFAULT_PROMPT);
+});
+
+test('normalizes whitespace-only prompt to built-in default when enabled is true', () => {
+  const normalized = normalizeContinuationConfig({ enabled: true, prompt: '   \n\t  ' });
+  assert.equal(normalized.prompt, BUILTIN_DEFAULT_PROMPT);
+});
+
+test('keeps empty prompt when enabled is false', () => {
+  const normalized = normalizeContinuationConfig({ enabled: false, prompt: '' });
+  assert.equal(normalized.prompt, '');
+});
+
+test('preserves explicitly configured prompt', () => {
+  const customPrompt = 'My custom continuation instruction.';
+  const normalized = normalizeContinuationConfig({ enabled: true, prompt: customPrompt });
+  assert.equal(normalized.prompt, customPrompt);
 });

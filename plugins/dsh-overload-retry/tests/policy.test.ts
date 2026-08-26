@@ -167,14 +167,62 @@ test('fails closed for invalid custom patterns without throwing', () => {
   });
 });
 
-test('fails closed for custom patterns that are too short to be meaningful', () => {
+test('allows short custom patterns (user responsibility for pattern quality)', () => {
+  // MIN_PATTERN_LENGTH check removed - users are responsible for their regex quality
   assert.deepEqual(
     classifyOverload(
       enabledConfig({ messagePatterns: ['overload', 'ok'] }),
-      input(),
+      input({ message: 'The service is overloaded.' }),
     ),
-    { matched: false, reason: 'invalid-config' },
+    { matched: true, reason: 'matched-message-pattern' },
   );
+});
+
+test('excludes "invalid api key" but not "invalid" in other contexts', () => {
+  const config = enabledConfig();
+
+  // Should be excluded - specific invalid patterns
+  assert.deepEqual(
+    classifyOverload(config, input({ message: 'invalid api key provided' })),
+    { matched: false, reason: 'message-excluded' },
+  );
+  assert.deepEqual(
+    classifyOverload(config, input({ message: 'invalid request body' })),
+    { matched: false, reason: 'message-excluded' },
+  );
+  assert.deepEqual(
+    classifyOverload(config, input({ message: 'invalid token for authentication' })),
+    { matched: false, reason: 'message-excluded' },
+  );
+  assert.deepEqual(
+    classifyOverload(config, input({ message: 'invalid credentials supplied' })),
+    { matched: false, reason: 'message-excluded' },
+  );
+
+  // Should NOT be excluded - "invalid" in overload context
+  assert.deepEqual(
+    classifyOverload(config, input({ message: 'The upstream service is temporarily overloaded due to invalid configuration' })),
+    { matched: true, reason: 'matched-message-pattern' },
+  );
+});
+
+test('pattern compilation is cached per config object', () => {
+  const config = enabledConfig();
+  const input1 = input({ message: 'The upstream service is temporarily overloaded.' });
+  const input2 = input({ message: 'The upstream service is temporarily overloaded again.' });
+
+  // First call should compile patterns
+  const result1 = classifyOverload(config, input1);
+  assert.deepEqual(result1, { matched: true, reason: 'matched-message-pattern' });
+
+  // Second call with same config object should use cache
+  const result2 = classifyOverload(config, input2);
+  assert.deepEqual(result2, { matched: true, reason: 'matched-message-pattern' });
+
+  // Different config object (even with same values) should compile separately
+  const config2 = enabledConfig();
+  const result3 = classifyOverload(config2, input1);
+  assert.deepEqual(result3, { matched: true, reason: 'matched-message-pattern' });
 });
 
 test('computes deterministic capped retry delays with bounded jitter', () => {

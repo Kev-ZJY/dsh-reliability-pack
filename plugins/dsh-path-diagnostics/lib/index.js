@@ -1,3 +1,4 @@
+import z from "@deepseek-ai/schemastery";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 //#region src/path-safety.ts
 function normalizeWorkspaceRoot(root) {
@@ -25,6 +26,14 @@ const DEFAULT_PATH_DIAGNOSTIC_CONFIG = {
 	maxSearchEntries: 2e3,
 	suggestOnlyWhenUnique: true
 };
+const Config = z.object({
+	enabled: z.boolean().default(DEFAULT_PATH_DIAGNOSTIC_CONFIG.enabled),
+	readOnly: z.const(true).default(true),
+	maxDepth: z.natural().default(DEFAULT_PATH_DIAGNOSTIC_CONFIG.maxDepth),
+	maxCandidates: z.natural().default(DEFAULT_PATH_DIAGNOSTIC_CONFIG.maxCandidates),
+	maxSearchEntries: z.natural().default(DEFAULT_PATH_DIAGNOSTIC_CONFIG.maxSearchEntries),
+	suggestOnlyWhenUnique: z.const(true).default(true)
+});
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 function isPositiveInteger(value) {
 	return Number.isSafeInteger(value) && value > 0;
@@ -220,4 +229,4 @@ function apply(ctx, config = DEFAULT_PATH_DIAGNOSTIC_CONFIG) {
 	else installPathDiagnostics(ctx, config);
 }
 //#endregion
-export { DEFAULT_PATH_DIAGNOSTIC_CONFIG, apply, apply as default, diagnoseReadFailure, installPathDiagnostics, isWithinWorkspace, name, normalizeContainedPath, normalizeWorkspaceRoot, searchUniqueCandidate };
+export { Config, DEFAULT_PATH_DIAGNOSTIC_CONFIG, apply, apply as default, diagnoseReadFailure, installPathDiagnostics, isWithinWorkspace, name, normalizeContainedPath, normalizeWorkspaceRoot, searchUniqueCandidate };

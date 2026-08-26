@@ -3,6 +3,7 @@ import { apply, type OverloadRetryRuntimeOptions } from './retry-handler.ts';
 export {
   DEFAULT_OVERLOAD_RETRY_CONFIG,
   normalizeOverloadRetryConfig,
+  Config,
   type OverloadRetryConfig,
   type OverloadRetryConfigInput,
 } from './config.ts';

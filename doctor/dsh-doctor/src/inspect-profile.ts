@@ -70,6 +70,19 @@ function validWorkspacePolicy(text: string): boolean {
 }
 
 function validPatch(text: string): boolean {
+  // Strip comment lines (starting with # after optional whitespace)
+  const stripped = text
+    .split('\n')
+    .filter((line) => !/^\s*#/.test(line))
+    .join('\n')
+    .trim();
+
+  // Empty, whitespace-only, or bare empty array `[]` (with optional whitespace) are valid "empty state"
+  if (stripped.length === 0 || /^\[\s*\]$/.test(stripped)) {
+    return true;
+  }
+
+  // Otherwise require at least one patch entry with id: and name:
   return /^\s*id:\s*\S+/m.test(text) && /^\s*name:\s*\S+/m.test(text);
 }
 

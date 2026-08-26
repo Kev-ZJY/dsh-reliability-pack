@@ -1,6 +1,5 @@
 import type { OverloadRetryConfig } from './config.ts';
 
-const MIN_PATTERN_LENGTH = 10;
 const EXCLUDED_MESSAGE_PATTERNS = [
   /\bauth(?:entication)?\b/i,
   /\bunauthorized\b/i,
@@ -8,12 +7,14 @@ const EXCLUDED_MESSAGE_PATTERNS = [
   /\bquota\b/i,
   /\bbilling\b/i,
   /\binsufficient\s+credits?\b/i,
-  /\binvalid\b/i,
+  /\binvalid\s+(?:api\s+key|request|token|credentials?)\b/i,
   /\bbad\s+request\b/i,
   /\bcontext\s+window\b/i,
   /\btoo\s+many\s+tokens?\b/i,
   /\btoken\s+limit\b/i,
 ];
+
+const compiledPatternsCache = new WeakMap<OverloadRetryConfig, RegExp[]>();
 
 export interface OverloadClassificationInput {
   provider: string;
@@ -87,14 +88,15 @@ export function retryDelay(
 }
 
 function compilePatterns(config: OverloadRetryConfig): RegExp[] | null {
+  const cached = compiledPatternsCache.get(config);
+  if (cached !== undefined) {
+    return cached;
+  }
+
   const flags = config.messagePatternIgnoreCase ? 'i' : '';
   const compiledPatterns: RegExp[] = [];
 
   for (const pattern of config.messagePatterns) {
-    if (pattern.length < MIN_PATTERN_LENGTH) {
-      return null;
-    }
-
     try {
       compiledPatterns.push(new RegExp(pattern, flags));
     } catch {
@@ -102,5 +104,6 @@ function compilePatterns(config: OverloadRetryConfig): RegExp[] | null {
     }
   }
 
+  compiledPatternsCache.set(config, compiledPatterns);
   return compiledPatterns;
 }

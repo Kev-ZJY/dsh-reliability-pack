@@ -14,6 +14,7 @@ export {
 
 export {
   DEFAULT_PATH_DIAGNOSTIC_CONFIG,
+  Config,
   searchUniqueCandidate,
   type PathDiagnosticConfig,
   type ReadOnlySearchAdapter,

@@ -35,6 +35,8 @@ Recommended rollout:
 1. Install into a disposable profile and run `dsh --dump-config`.
 2. Keep `enabled: false` until your retry/tool-guard checks pass.
 3. Flip `enabled: true` only for profiles where one extra post-turn prompt is acceptable.
+   If `enabled: true` and `prompt` is empty or whitespace, a built-in default prompt
+   (`'Continue exactly where you left off and complete the truncated response.'`) will be used.
 
 ## Budgets And Refusals
 

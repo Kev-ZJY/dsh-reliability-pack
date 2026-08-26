@@ -1,3 +1,4 @@
+import z from "@deepseek-ai/schemastery";
 //#region src/search.d.ts
 type PathDiagnosticConfig = {
   enabled: boolean;
@@ -25,6 +26,7 @@ type SearchResult = {
   reason: string;
 };
 declare const DEFAULT_PATH_DIAGNOSTIC_CONFIG: PathDiagnosticConfig;
+declare const Config: z<PathDiagnosticConfig>;
 declare function searchUniqueCandidate(root: string, requestedPath: string, config: PathDiagnosticConfig, adapter: ReadOnlySearchAdapter, signal?: AbortSignal): Promise<SearchResult>;
 //#endregion
 //#region src/diagnostics.d.ts
@@ -103,4 +105,4 @@ declare function isWithinWorkspace(root: string, candidate: string): boolean;
 declare const name = "dsh-path-diagnostics";
 declare function apply(ctx: PathDiagnosticsRuntimeContext, config?: PathDiagnosticConfig): void;
 //#endregion
-export { DEFAULT_PATH_DIAGNOSTIC_CONFIG, type PathDiagnostic, type PathDiagnosticConfig, type PathDiagnosticEvent, type PathDiagnosticsOptions, type PathDiagnosticsRuntimeContext, type ReadOnlySearchAdapter, type SearchDirectoryEntry, type SearchPathMetadata, type SearchResult, apply, apply as default, diagnoseReadFailure, installPathDiagnostics, isWithinWorkspace, name, normalizeContainedPath, normalizeWorkspaceRoot, searchUniqueCandidate };
+export { Config, DEFAULT_PATH_DIAGNOSTIC_CONFIG, type PathDiagnostic, type PathDiagnosticConfig, type PathDiagnosticEvent, type PathDiagnosticsOptions, type PathDiagnosticsRuntimeContext, type ReadOnlySearchAdapter, type SearchDirectoryEntry, type SearchPathMetadata, type SearchResult, apply, apply as default, diagnoseReadFailure, installPathDiagnostics, isWithinWorkspace, name, normalizeContainedPath, normalizeWorkspaceRoot, searchUniqueCandidate };

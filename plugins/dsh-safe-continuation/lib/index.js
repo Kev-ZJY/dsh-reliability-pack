@@ -1,5 +1,7 @@
+import z from "@deepseek-ai/schemastery";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 //#region src/config.ts
+const BUILTIN_DEFAULT_PROMPT = "Continue exactly where you left off and complete the truncated response.";
 const DEFAULT_CONTINUATION_CONFIG = {
 	enabled: false,
 	maxPerTurn: 1,
@@ -9,15 +11,25 @@ const DEFAULT_CONTINUATION_CONFIG = {
 	skipWhenApprovalPending: true
 };
 function normalizeContinuationConfig(input = {}) {
+	const enabled = input.enabled ?? DEFAULT_CONTINUATION_CONFIG.enabled;
+	const prompt = input.prompt ?? DEFAULT_CONTINUATION_CONFIG.prompt;
 	return {
-		enabled: input.enabled ?? DEFAULT_CONTINUATION_CONFIG.enabled,
+		enabled,
 		maxPerTurn: input.maxPerTurn ?? DEFAULT_CONTINUATION_CONFIG.maxPerTurn,
 		maxPerSession: input.maxPerSession ?? DEFAULT_CONTINUATION_CONFIG.maxPerSession,
-		prompt: input.prompt ?? DEFAULT_CONTINUATION_CONFIG.prompt,
+		prompt: enabled && prompt.trim() === "" ? BUILTIN_DEFAULT_PROMPT : prompt,
 		skipWhenToolsPresent: input.skipWhenToolsPresent ?? DEFAULT_CONTINUATION_CONFIG.skipWhenToolsPresent,
 		skipWhenApprovalPending: input.skipWhenApprovalPending ?? DEFAULT_CONTINUATION_CONFIG.skipWhenApprovalPending
 	};
 }
+const Config = z.object({
+	enabled: z.boolean().default(DEFAULT_CONTINUATION_CONFIG.enabled),
+	maxPerTurn: z.natural().default(DEFAULT_CONTINUATION_CONFIG.maxPerTurn),
+	maxPerSession: z.natural().default(DEFAULT_CONTINUATION_CONFIG.maxPerSession),
+	prompt: z.string().default(""),
+	skipWhenToolsPresent: z.boolean().default(DEFAULT_CONTINUATION_CONFIG.skipWhenToolsPresent),
+	skipWhenApprovalPending: z.boolean().default(DEFAULT_CONTINUATION_CONFIG.skipWhenApprovalPending)
+});
 //#endregion
 //#region src/guards.ts
 function invalidLimit(value) {
@@ -181,6 +193,8 @@ function installSafeContinuation(ctx, options = {}) {
 	return () => {
 		if (disposed) return;
 		disposed = true;
+		sessionCounts.clear();
+		turnCounts.clear();
 		unsubscribe();
 	};
 }
@@ -191,4 +205,4 @@ function apply(ctx, config = {}) {
 	ctx.effect?.(() => installSafeContinuation(ctx, config), "dsh-safe-continuation: dispose");
 }
 //#endregion
-export { DEFAULT_CONTINUATION_CONFIG, apply, apply as default, decideContinuation, installSafeContinuation, name, normalizeContinuationConfig };
+export { BUILTIN_DEFAULT_PROMPT, Config, DEFAULT_CONTINUATION_CONFIG, apply, apply as default, decideContinuation, installSafeContinuation, name, normalizeContinuationConfig };

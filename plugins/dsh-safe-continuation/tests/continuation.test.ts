@@ -280,3 +280,46 @@ test('apply cleanup disposes the installed turn-stopping hook', async () => {
 
   assert.equal(agent.steerCalls.length, 0);
 });
+
+test('dispose clears session and turn count maps allowing fresh start', async () => {
+  const { ctx, emit, disposeEffects } = createContext();
+  const diagnostics: ContinuationRuntimeDiagnostic[] = [];
+  const agent = createAgent();
+
+  installSafeContinuation(ctx, {
+    enabled: true,
+    prompt: 'Continue safely.',
+    maxPerSession: 2,
+    maxPerTurn: 2,
+    onDiagnostic(diagnostic) {
+      diagnostics.push(diagnostic);
+    },
+  });
+
+  // First session - exhaust the budget
+  await emit({ agent, turn: 1 });
+  await emit({ agent: createAgent({ sessionId: 'session-1', turn: 2 }), turn: 2 });
+
+  // Verify first session exhausted
+  assert.equal(diagnostics.filter(d => d.reason === 'continue').length, 2);
+
+  // Dispose and reinstall
+  disposeEffects();
+  const diagnostics2: ContinuationRuntimeDiagnostic[] = [];
+  installSafeContinuation(ctx, {
+    enabled: true,
+    prompt: 'Continue safely.',
+    maxPerSession: 2,
+    maxPerTurn: 2,
+    onDiagnostic(diagnostic) {
+      diagnostics2.push(diagnostic);
+    },
+  });
+
+  // New agent with same sessionId should start fresh
+  await emit({ agent: createAgent({ sessionId: 'session-1', turn: 1 }), turn: 1 });
+
+  // Should get a continue decision (fresh count)
+  assert.equal(diagnostics2.filter(d => d.reason === 'continue').length, 1);
+  assert.equal(diagnostics2[0]?.attempt, 1);
+});

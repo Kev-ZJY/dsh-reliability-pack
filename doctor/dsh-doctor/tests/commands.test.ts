@@ -240,19 +240,45 @@ test('runProfileUpdate reports backup when post-update dump-config validation fa
   }
 });
 
-test('command output redacts secrets returned by an injected inspector', async () => {
+test('runProfileUpdate exits 0 with warning when post-update validator throws (validator error, not profile corruption)', async () => {
   const fixture = await createProfileFixture();
-  const captured = captureIO({
-    inspectProfile: async () => ({
-      ok: false,
-      checks: [{ id: 'secret', ok: false, message: 'accessToken=super-secret-value' }],
-    }),
-  });
+  const command = runnerFor();
+  const captured = captureIO({ commandRunner: command.runner });
   try {
-    assert.equal(await runCheck(fixture.args, captured.io), 1);
-    const text = captured.errors.join('\n');
-    assert.doesNotMatch(text, /super-secret-value/);
-    assert.match(text, /REDACTED/);
+    const exitCode = await runProfileUpdate(fixture.args, {
+      ...captured.io,
+      inspectProfile: async () => {
+        throw new Error('validator internal error: cannot read config');
+      },
+    });
+    assert.equal(exitCode, 0);
+    const errors = captured.errors.join('\n');
+    assert.match(errors, /post-update validation could not run/i);
+    assert.match(errors, /validator error: validator internal error: cannot read config/i);
+    assert.match(errors, /update itself exited 0/i);
+    assert.match(errors, /backup:/i);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('runProfileUpdate exits 1 when post-update validation explicitly fails (ok: false)', async () => {
+  const fixture = await createProfileFixture();
+  const command = runnerFor();
+  const captured = captureIO({ commandRunner: command.runner });
+  try {
+    const exitCode = await runProfileUpdate(fixture.args, {
+      ...captured.io,
+      inspectProfile: async () => ({
+        ok: false,
+        checks: [{ id: 'cordis-patch', ok: false, message: 'Cordis patch is malformed', path: fixture.args.cordisPatchPath }],
+      }),
+    });
+    assert.equal(exitCode, 1);
+    const errors = captured.errors.join('\n');
+    assert.match(errors, /post-update validation failed/i);
+    assert.match(errors, /backup:/i);
+    assert.match(errors, /malformed/i);
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
   }

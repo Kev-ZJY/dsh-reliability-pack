@@ -1,3 +1,4 @@
+import z from "@deepseek-ai/schemastery";
 //#region src/config.d.ts
 interface ContinuationConfig {
   enabled: boolean;
@@ -15,8 +16,10 @@ interface ContinuationConfigInput {
   skipWhenToolsPresent?: boolean;
   skipWhenApprovalPending?: boolean;
 }
+declare const BUILTIN_DEFAULT_PROMPT = "Continue exactly where you left off and complete the truncated response.";
 declare const DEFAULT_CONTINUATION_CONFIG: ContinuationConfig;
 declare function normalizeContinuationConfig(input?: ContinuationConfigInput): ContinuationConfig;
+declare const Config: z<ContinuationConfig>;
 //#endregion
 //#region src/guards.d.ts
 interface ContinuationObservation {
@@ -84,4 +87,4 @@ declare const name = "dsh-safe-continuation";
 interface SafeContinuationConfig extends SafeContinuationRuntimeOptions {}
 declare function apply(ctx: SafeContinuationContext, config?: SafeContinuationConfig): void;
 //#endregion
-export { type ContinuationConfig, type ContinuationConfigInput, type ContinuationDecision, type ContinuationObservation, type ContinuationRuntimeDiagnostic, DEFAULT_CONTINUATION_CONFIG, SafeContinuationConfig, type SafeContinuationContext, type SafeContinuationRuntimeOptions, apply, apply as default, decideContinuation, installSafeContinuation, name, normalizeContinuationConfig };
+export { BUILTIN_DEFAULT_PROMPT, Config, type ContinuationConfig, type ContinuationConfigInput, type ContinuationDecision, type ContinuationObservation, type ContinuationRuntimeDiagnostic, DEFAULT_CONTINUATION_CONFIG, SafeContinuationConfig, type SafeContinuationContext, type SafeContinuationRuntimeOptions, apply, apply as default, decideContinuation, installSafeContinuation, name, normalizeContinuationConfig };
